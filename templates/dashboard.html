@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}仪表盘{% endblock %}
+{% block content %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">今日总计</div>
+            <div class="num text-success">{{ total }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">活跃爬虫</div>
+            <div class="num text-primary">{{ active|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">暂无产出</div>
+            <div class="num text-secondary">{{ idle|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">总计爬虫</div>
+            <div class="num text-dark">{{ total_crawlers }}</div>
+        </div>
+    </div>
+</div>
+
+{% if active %}
+<div class="section-title">🟢 有产出（{{ active|length }} 站）</div>
+<div class="row g-2 mb-4">
+    {% for c in active %}
+    <div class="col-md-3 col-sm-6">
+        <a href="/crawler/{{ c.name }}" style="text-decoration:none">
+            <div class="crawler-card active">
+                <div class="name">{{ c.name }}</div>
+                <div class="count text-success">{{ c.count }} <span style="font-size:14px;font-weight:400">条</span></div>
+                <div class="ago">{{ c.ago }}</div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if idle %}
+<div class="section-title">😴 暂无产出（{{ idle|length }} 站）</div>
+<div class="idle-tags mb-4">
+    {% for c in idle %}
+    <a href="/crawler/{{ c.name }}" style="text-decoration:none">
+        <span class="idle-tag">{{ c.name }}</span>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

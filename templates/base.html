@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>getWeb-View — {% block title %}爬虫监控{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f5f7fa; font-size: 14px; }
+        .navbar { background: #1a1a2e; }
+        .navbar-brand { color: #e94560 !important; font-weight: 700; }
+        .stat-card { background: #fff; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .stat-card .num { font-size: 28px; font-weight: 700; }
+        .crawler-card { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: transform .15s; }
+        .crawler-card:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,.1); }
+        .crawler-card.active { border-left: 3px solid #27ae60; }
+        .crawler-card.idle { border-left: 3px solid #bdc3c7; opacity: .65; }
+        .crawler-card .name { font-weight: 600; font-size: 15px; color: #2c3e50; }
+        .crawler-card .count { font-size: 22px; font-weight: 700; }
+        .crawler-card .ago { font-size: 12px; color: #95a5a6; margin-top: 2px; }
+        .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+        .idle-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .idle-tag { background: #ecf0f1; color: #7f8c8d; padding: 3px 10px; border-radius: 12px; font-size: 12px; }
+        .item-row { padding: 10px 0; border-bottom: 1px solid #eee; }
+        .item-row:last-child { border-bottom: none; }
+        .item-title { font-size: 14px; color: #2c3e50; }
+        .item-title a { color: #2c3e50; text-decoration: none; }
+        .item-title a:hover { color: #e94560; }
+        .item-time { font-size: 12px; color: #95a5a6; }
+        .back-link { color: #7f8c8d; text-decoration: none; font-size: 13px; }
+        .back-link:hover { color: #2c3e50; }
+        .error-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 40px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">getWeb-View</a>
+        <span class="text-light opacity-75" style="font-size: 13px;">爬虫数据面板</span>
+    </div>
+</nav>
+
+<div class="container py-4">
+    {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>

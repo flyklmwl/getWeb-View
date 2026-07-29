@@ -1,0 +1,15 @@
+services:
+  getweb-view:
+    build: .
+    container_name: getweb-view
+    restart: always
+    ports:
+      - "10030:5000"
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+    networks:
+      - web_net
+
+networks:
+  web_net:
+    external: true

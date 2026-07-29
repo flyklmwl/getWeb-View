@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="error-box">
+    <h4>{{ error }}</h4>
+    <a href="/" class="btn btn-outline-secondary mt-3">← 返回仪表盘</a>
+</div>
+{% else %}
+
+<a href="/" class="back-link mb-3 d-inline-block">← 返回仪表盘</a>
+<h4 class="mb-3">{{ name }}</h4>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">总条数</div>
+            <div class="num text-dark">{{ total }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">今日新增</div>
+            <div class="num text-success">{{ today_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">最近抓取</div>
+            <div class="num text-primary" style="font-size:16px">{{ last_ago }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="text-muted" style="font-size:12px">首次抓取</div>
+            <div style="font-size:14px;font-weight:600">{{ first_time }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="section-title">最近抓取（20 条）</div>
+<div class="stat-card">
+    {% if items %}
+    {% for item in items %}
+    <div class="item-row d-flex justify-content-between align-items-start">
+        <div class="item-title">
+            {% if item.get("link") %}
+            <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.get("title", "无标题") }}</a>
+            {% else %}
+            {{ item.get("title", "无标题") }}
+            {% endif %}
+        </div>
+        <div class="item-time text-nowrap ms-3">{{ item._time }}</div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="text-muted text-center py-4">暂无数据</div>
+    {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}
