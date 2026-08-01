@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}搜索{% endblock %}
+{% block content %}
+
+<a href="/" class="back-link mb-3 d-inline-block">← 返回仪表盘</a>
+
+<form class="search-inline" action="/search" method="get">
+    <input name="q" placeholder="跨站搜索标题..." value="{{ q }}" autofocus>
+    <button type="submit" class="btn btn-sm" style="background:#e94560;color:#fff;border:none;font-size:13px">搜索</button>
+</form>
+
+{% if q %}
+<div class="mb-2">
+    <h5 class="mb-1">搜索 "{{ q }}" — 显示 {{ total }} 条</h5>
+    {% if sources %}
+    <div class="source-summary">
+        {% for name, count in sources.items() %}
+        <a href="/crawler/{{ name }}?q={{ q }}" class="source-count">{{ name }} {{ count }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if truncated %}
+    <div class="text-warning" style="font-size:12px;margin-top:4px">⚠️ 结果超过 500 条，仅显示前 500 条。建议缩小搜索范围。</div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if results %}
+<div class="stat-card">
+    {% for item in results %}
+    <div class="item-row d-flex justify-content-between align-items-start">
+        <div class="item-title">
+            <span class="source-tag">{{ item._source }}</span>
+            {% if item.get("link") %}
+            <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.get("title", "无标题") }}</a>
+            {% else %}
+            {{ item.get("title", "无标题") }}
+            {% endif %}
+        </div>
+        <div class="item-time text-nowrap ms-3">{{ item._time }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% elif q %}
+<div class="text-muted text-center py-5">没有找到匹配的结果</div>
+{% endif %}
+
+{% endblock %}

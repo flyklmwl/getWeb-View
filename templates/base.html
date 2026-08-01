@@ -32,6 +32,10 @@
         .item-title a { color: #2c3e50; text-decoration: none; }
         .item-title a:hover { color: #e94560; }
         .item-time { font-size: 12px; color: #95a5a6; }
+        .source-tag { display: inline-block; background: #e8f4fd; color: #2980b9; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-right: 6px; font-weight: 500; }
+        .source-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+        .source-count { font-size: 12px; background: #ecf0f1; color: #7f8c8d; padding: 2px 8px; border-radius: 10px; text-decoration: none; }
+        .source-count:hover { background: #e94560; color: #fff; }
         .back-link { color: #7f8c8d; text-decoration: none; font-size: 13px; }
         .back-link:hover { color: #2c3e50; }
         .error-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 40px; text-align: center; }
@@ -39,6 +43,12 @@
         .page-link:hover { background: #e9ecef; color: #2c3e50; }
         .page-item.active .page-link { background: #e94560; border-color: #e94560; }
         .page-item.disabled .page-link { color: #bdc3c7; }
+        .search-input { font-size: 13px; padding: 4px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(255,255,255,.1); color: #fff; outline: none; width: 180px; transition: .2s; }
+        .search-input::placeholder { color: rgba(255,255,255,.4); }
+        .search-input:focus { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.15); width: 240px; }
+        .search-inline { display: flex; gap: 8px; margin-bottom: 16px; }
+        .search-inline input { font-size: 13px; padding: 5px 12px; border: 1px solid #dee2e6; border-radius: 6px; outline: none; flex: 1; }
+        .search-inline input:focus { border-color: #e94560; }
     </style>
 </head>
 <body>
@@ -46,7 +56,10 @@
 <nav class="navbar navbar-dark">
     <div class="container">
         <a class="navbar-brand" href="/">getWeb-View</a>
-        <span class="text-light opacity-75" style="font-size: 13px;">爬虫数据面板</span>
+        <span class="text-light opacity-75 me-auto ms-2" style="font-size: 13px;">爬虫数据面板</span>
+        <form action="/search" method="get" class="d-flex">
+            <input name="q" class="search-input" placeholder="搜索标题..." value="">
+        </form>
     </div>
 </nav>
 

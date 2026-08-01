@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timezone, timedelta
 
 from flask import Flask, render_template, request
@@ -10,8 +11,8 @@ app = Flask(__name__)
 _MONGO_PORT = os.environ.get("MONGO_PORT", "27017")
 _MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_URL = os.environ.get("MONGO_URL", f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}")
-DB_NAME = "webdata"
 
+DB_NAME = "webdata"
 
 
 def get_db():
@@ -108,6 +109,12 @@ def crawler_detail(name):
 
     coll = db[name]
     today_ts = beijing_today_start_ts()
+    q = request.args.get("q", "").strip()
+
+    # 查询条件
+    query = {}
+    if q:
+        query["title"] = {"$regex": re.escape(q), "$options": "i"}
 
     # 分页
     PER_PAGE = 20
@@ -115,13 +122,13 @@ def crawler_detail(name):
     if page < 1:
         page = 1
 
-    total_items = coll.count_documents({})
+    total_items = coll.count_documents(query)
     total_pages = max(1, (total_items + PER_PAGE - 1) // PER_PAGE)
     if page > total_pages:
         page = total_pages
 
     skip = (page - 1) * PER_PAGE
-    items = list(coll.find(sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
+    items = list(coll.find(query, sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
     today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
 
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
@@ -137,11 +144,61 @@ def crawler_detail(name):
         total=total_items,
         total_pages=total_pages,
         page=page,
+        q=q,
         today_count=today_count,
         first_time=ts_to_beijing(first.get("crawltime") if first else None),
         last_time=ts_to_beijing(last.get("crawltime") if last else None),
         last_ago=ts_ago(last.get("crawltime") if last else None),
         error=None,
+    )
+
+
+@app.route("/search")
+def search():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return render_template("search.html", q="", results=[], total=0, sources={}, truncated=False)
+
+    db = get_db()
+    results = []
+    source_counts = {}
+    regex = {"$regex": re.escape(q), "$options": "i"}
+    MAX_RESULTS = 500
+
+    for coll_name in sorted(db.list_collection_names()):
+        if coll_name == "stats":
+            continue
+
+        coll = db[coll_name]
+        matched = coll.count_documents({"title": regex})
+        if matched == 0:
+            continue
+
+        source_counts[coll_name] = matched
+        items = list(coll.find(
+            {"title": regex},
+            sort=[("crawltime", -1)],
+            limit=MAX_RESULTS - len(results),
+        ))
+
+        for item in items:
+            item["_source"] = coll_name
+            item["_time"] = ts_to_beijing(item.get("crawltime"))
+            results.append(item)
+
+        if len(results) >= MAX_RESULTS:
+            break
+
+    results.sort(key=lambda x: x.get("crawltime") or 0, reverse=True)
+    truncated = len(results) >= MAX_RESULTS
+
+    return render_template(
+        "search.html",
+        q=q,
+        results=results,
+        total=len(results),
+        sources=source_counts,
+        truncated=truncated,
     )
 
 
