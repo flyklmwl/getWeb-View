@@ -2,7 +2,7 @@
 {% block title %}仪表盘{% endblock %}
 {% block content %}
 
-<div class="row g-3 mb-4">
+<div class="row g-2 mb-3">
     <div class="col-md-3">
         <div class="stat-card text-center">
             <div class="text-muted" style="font-size:12px">今日总计</div>
@@ -30,15 +30,23 @@
 </div>
 
 {% if active %}
-<div class="section-title">🟢 有产出（{{ active|length }} 站）</div>
+<div class="d-flex justify-content-between align-items-center" style="margin: 20px 0 10px">
+    <div class="section-title" style="margin:0">🟢 有产出（{{ active|length }} 站）</div>
+    <div class="sort-bar">
+        <a href="?sort=count" class="sort-btn {{ 'active' if sort=='count' else '' }}">数量</a>
+        <a href="?sort=time" class="sort-btn {{ 'active' if sort=='time' else '' }}">时间</a>
+    </div>
+</div>
 <div class="row g-2 mb-4">
     {% for c in active %}
     <div class="col-md-3 col-sm-6">
         <a href="/crawler/{{ c.name }}" style="text-decoration:none">
             <div class="crawler-card active">
-                <div class="name">{{ c.name }}</div>
-                <div class="count text-success">{{ c.count }} <span style="font-size:14px;font-weight:400">条</span></div>
-                <div class="ago">{{ c.ago }}</div>
+                <span class="name">{{ c.name }}</span>
+                <span class="crawler-meta">
+                    <span class="count text-success">{{ c.count }}条</span>
+                    <span class="ago">{{ c.ago }}</span>
+                </span>
             </div>
         </a>
     </div>

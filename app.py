@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone, timedelta
 
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from pymongo import MongoClient
 
 app = Flask(__name__)
@@ -80,6 +80,14 @@ def dashboard():
     active = [c for c in crawlers if c["count"] > 0]
     idle = [c for c in crawlers if c["count"] == 0]
 
+    # 排序
+    sort_by = request.args.get("sort", "count")
+    if sort_by == "time":
+        active.sort(key=lambda c: c["last_ts"] or 0, reverse=True)
+    else:
+        active.sort(key=lambda c: c["count"], reverse=True)
+    idle.sort(key=lambda c: c["last_ts"] or 0, reverse=True)
+
     return render_template(
         "dashboard.html",
         crawlers=crawlers,
@@ -87,6 +95,7 @@ def dashboard():
         idle=idle,
         total=total,
         total_crawlers=len(crawlers),
+        sort=sort_by,
     )
 
 
@@ -100,8 +109,19 @@ def crawler_detail(name):
     coll = db[name]
     today_ts = beijing_today_start_ts()
 
-    items = list(coll.find(sort=[("crawltime", -1)]).limit(20))
+    # 分页
+    PER_PAGE = 20
+    page = request.args.get("page", 1, type=int)
+    if page < 1:
+        page = 1
+
     total_items = coll.count_documents({})
+    total_pages = max(1, (total_items + PER_PAGE - 1) // PER_PAGE)
+    if page > total_pages:
+        page = total_pages
+
+    skip = (page - 1) * PER_PAGE
+    items = list(coll.find(sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
     today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
 
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
@@ -115,6 +135,8 @@ def crawler_detail(name):
         name=name,
         items=items,
         total=total_items,
+        total_pages=total_pages,
+        page=page,
         today_count=today_count,
         first_time=ts_to_beijing(first.get("crawltime") if first else None),
         last_time=ts_to_beijing(last.get("crawltime") if last else None),
