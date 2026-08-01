@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}日志{% endblock %}
+{% block content %}
+
+<h4 class="mb-3">📋 爬虫日志</h4>
+
+<div class="row g-2 mb-3">
+    <div class="col-auto">
+        <select class="form-select form-select-sm" style="font-size:13px" onchange="location.search='?file='+this.value+'&lines={{ lines }}&level={{ level }}&crawler={{ crawler }}'">
+            {% for f in log_files %}
+            <option value="{{ f }}" {{ 'selected' if f == current_file }}>{{ f }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select class="form-select form-select-sm" style="font-size:13px" onchange="location.search='?file={{ current_file }}&lines={{ lines }}&level='+this.value+'&crawler={{ crawler }}'">
+            <option value="">全部级别</option>
+            <option value="ERROR" {{ 'selected' if level=='ERROR' }}>ERROR</option>
+            <option value="WARNING" {{ 'selected' if level=='WARNING' }}>WARNING</option>
+            <option value="INFO" {{ 'selected' if level=='INFO' }}>INFO</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <input type="text" class="form-control form-control-sm" placeholder="爬虫名筛选..." style="font-size:13px;width:140px" id="crawler-filter" value="{{ crawler }}" onchange="applyFilter()">
+    </div>
+    <div class="col-auto">
+        <select class="form-select form-select-sm" style="font-size:13px" onchange="location.search='?file={{ current_file }}&lines='+this.value+'&level={{ level }}&crawler={{ crawler }}'">
+            <option value="100" {{ 'selected' if lines==100 }}>100 行</option>
+            <option value="200" {{ 'selected' if lines==200 }}>200 行</option>
+            <option value="500" {{ 'selected' if lines==500 }}>500 行</option>
+            <option value="1000" {{ 'selected' if lines==1000 }}>1000 行</option>
+        </select>
+    </div>
+</div>
+
+<div class="stat-card" style="padding:0">
+    <div class="log-container">
+        {% if log_lines %}
+        {% for line in log_lines %}
+        <div class="log-line {% if '| ERROR' in line %}log-error{% elif '| WARNING' in line %}log-warning{% endif %}">{{ line }}</div>
+        {% endfor %}
+        {% else %}
+        <div class="text-muted text-center py-5">暂无日志</div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function applyFilter() {
+    var crawler = document.getElementById('crawler-filter').value;
+    location.search = '?file={{ current_file }}&lines={{ lines }}&level={{ level }}&crawler=' + encodeURIComponent(crawler);
+}
+</script>
+
+<style>
+.log-container { max-height: calc(100vh - 220px); overflow-y: auto; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; font-size: 12px; }
+.log-line { padding: 3px 14px 3px 8px; border-bottom: 1px solid #f0f0f0; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; text-align: left; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; font-size: 12px; color: #555; }
+.log-line:nth-child(even) { background: #fafbfc; }
+.log-error { background: #fff5f5 !important; }
+.log-error:nth-child(even) { background: #ffebeb !important; }
+.log-warning { background: #fffdf0 !important; }
+</style>
+
+{% endblock %}

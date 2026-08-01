@@ -24,6 +24,8 @@ def inject_sidebar():
 _MONGO_PORT = os.environ.get("MONGO_PORT", "27017")
 _MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_URL = os.environ.get("MONGO_URL", f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}")
+LOGS_PATH = os.environ.get("LOGS_PATH", "/getweb-logs")
+
 
 DB_NAME = "webdata"
 
@@ -215,5 +217,53 @@ def search():
     )
 
 
+@app.route("/logs")
+def view_logs():
+    """查看 getWeb 日志"""
+    file = request.args.get("file", "getweb.log")
+    lines = request.args.get("lines", 200, type=int)
+    level = request.args.get("level", "").upper()
+    crawler = request.args.get("crawler", "").strip()
+
+    # 列出可用的日志文件
+    log_files = []
+    if os.path.isdir(LOGS_PATH):
+        log_files = sorted(
+            f for f in os.listdir(LOGS_PATH)
+            if f.endswith(".log")
+        )
+
+    # 安全检查：防止路径穿越
+    file_path = os.path.join(LOGS_PATH, os.path.basename(file))
+    log_lines = []
+    if os.path.isfile(file_path):
+        with open(file_path, errors="ignore") as f:
+            raw = f.readlines()
+
+        # 过滤
+        for line in raw:
+            if level and f"| {level:<8}" not in line:
+                continue
+            if crawler and f"[{crawler}]" not in line:
+                continue
+            log_lines.append(line.strip())
+
+        # 取最后 N 行，倒序（最新在前）
+        log_lines = log_lines[-lines:]
+        log_lines.reverse()
+
+    return render_template(
+        "logs.html",
+        log_files=log_files,
+        current_file=file,
+        log_lines=log_lines,
+        level=level,
+        crawler=crawler,
+        lines=lines,
+    )
+
+
 if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
+
     app.run(host="0.0.0.0", port=5000, debug=False)

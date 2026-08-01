@@ -70,6 +70,14 @@
         .search-inline input { font-size: 13px; padding: 5px 12px; border: 1px solid #dee2e6; border-radius: 6px; outline: none; flex: 1; }
         .search-inline input:focus { border-color: #e94560; }
         .sidebar-details summary::-webkit-details-marker { display: none; }
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; z-index: 1000; height: 100vh; box-shadow: 4px 0 20px rgba(0,0,0,.3); }
+            .sidebar.collapsed { display: none; }
+            .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 999; }
+            .sidebar:not(.collapsed) ~ .sidebar-backdrop { display: block; }
+            .content { padding: 12px; }
+            .log-container { max-height: calc(100vh - 200px); }
+        }
     </style>
 </head>
 <body>
@@ -87,7 +95,9 @@
             <a href="/crawler/{{ c }}" class="crawler-link {{ 'active' if request.path == '/crawler/' ~ c }}">{{ c }}</a>
             {% endfor %}
         </details>
+        <a href="/logs" class="{{ 'active' if request.path == '/logs' }}">📋 日志</a>
     </aside>
+    <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
     <div class="main">
         <div class="topbar">
@@ -113,7 +123,9 @@ function toggleSidebar() {
     localStorage.setItem('sidebar-collapsed', sb.classList.contains('collapsed'));
 }
 (function() {
-    if (localStorage.getItem('sidebar-collapsed') === 'true') {
+    var mobile = window.innerWidth <= 768;
+    var saved = localStorage.getItem('sidebar-collapsed');
+    if (saved === 'true' || (saved === null && mobile)) {
         document.getElementById('sidebar').classList.add('collapsed');
     }
 })();

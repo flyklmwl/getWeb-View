@@ -7,6 +7,9 @@ services:
       - "10030:5000"
     environment:
       - MONGO_URL=mongodb://mongodb:27017
+      - LOGS_PATH=/getweb-logs
+    volumes:
+      - /opt/getweb/logs:/getweb-logs:ro
     networks:
       - web_net
 
