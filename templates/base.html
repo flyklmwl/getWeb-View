@@ -6,9 +6,34 @@
     <title>getWeb-View — {% block title %}爬虫监控{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background: #f5f7fa; font-size: 14px; }
-        .navbar { background: #1a1a2e; }
-        .navbar-brand { color: #e94560 !important; font-weight: 700; }
+        * { box-sizing: border-box; }
+        body { background: #f5f7fa; font-size: 14px; margin: 0; }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 210px; min-width: 210px; background: #1a1a2e; color: #ccc;
+            display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+            overflow-y: auto; overflow-x: hidden; transition: width .25s, min-width .25s;
+        }
+        .sidebar.collapsed { width: 0; min-width: 0; }
+        .sidebar-brand { padding: 20px 20px 12px; font-size: 18px; font-weight: 700; color: #e94560; }
+        .sidebar-divider { margin: 8px 16px 4px; border-top: 1px solid rgba(255,255,255,.08); }
+        .sidebar a { display: block; padding: 7px 20px; color: #aaa; text-decoration: none; font-size: 13px; transition: .15s; border-left: 2px solid transparent; white-space: nowrap; }
+        .sidebar a:hover { color: #fff; background: rgba(255,255,255,.05); }
+        .sidebar a.active { color: #e94560; background: rgba(233,69,96,.1); border-left-color: #e94560; }
+        .sidebar a.crawler-link { padding: 4px 20px 4px 34px; font-size: 12px; }
+        .sidebar-parent { display: block; padding: 7px 20px; color: #aaa; text-decoration: none; font-size: 13px; cursor: pointer; outline: none; user-select: none; list-style: none; border-left: 2px solid transparent; transition: .15s; white-space: nowrap; }
+        .sidebar-parent:hover { color: #fff; background: rgba(255,255,255,.05); }
+        .sidebar-parent.active { color: #e94560; background: rgba(233,69,96,.1); border-left-color: #e94560; }
+        .main { flex: 1; min-width: 0; display: flex; flex-direction: column; transition: margin-left .25s; }
+        .topbar {
+            background: #fff; border-bottom: 1px solid #e9ecef; padding: 8px 16px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .toggle-btn { background: none; border: none; font-size: 18px; color: #7f8c8d; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: .15s; }
+        .toggle-btn:hover { color: #2c3e50; background: #f0f0f0; }
+        .search-input-top { font-size: 13px; padding: 4px 12px; border: 1px solid #dee2e6; border-radius: 16px; outline: none; width: 200px; transition: .2s; }
+        .search-input-top:focus { border-color: #e94560; width: 260px; }
+        .content { padding: 16px 24px; flex: 1; }
         .stat-card { background: #fff; border-radius: 8px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
         .stat-card .num { font-size: 22px; font-weight: 700; }
         .crawler-card { background: #fff; border-radius: 6px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); transition: transform .12s; display: flex; align-items: center; justify-content: space-between; }
@@ -18,7 +43,7 @@
         .crawler-card .count { font-size: 16px; font-weight: 700; }
         .crawler-card .ago { font-size: 11px; color: #95a5a6; margin-top: 1px; }
         .crawler-card .crawler-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0; }
-        .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+        .section-title { font-size: 16px; font-weight: 600; margin: 20px 0 10px; }
         .idle-tags { display: flex; flex-wrap: wrap; gap: 6px; }
         .idle-tag { background: #ecf0f1; color: #7f8c8d; padding: 3px 10px; border-radius: 12px; font-size: 12px; }
         .sort-bar { display: flex; gap: 2px; background: #e9ecef; border-radius: 6px; padding: 2px; }
@@ -36,36 +61,63 @@
         .source-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
         .source-count { font-size: 12px; background: #ecf0f1; color: #7f8c8d; padding: 2px 8px; border-radius: 10px; text-decoration: none; }
         .source-count:hover { background: #e94560; color: #fff; }
-        .back-link { color: #7f8c8d; text-decoration: none; font-size: 13px; }
-        .back-link:hover { color: #2c3e50; }
         .error-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 40px; text-align: center; }
         .page-link { font-size: 13px; color: #2c3e50; border: none; padding: 6px 12px; }
         .page-link:hover { background: #e9ecef; color: #2c3e50; }
         .page-item.active .page-link { background: #e94560; border-color: #e94560; }
         .page-item.disabled .page-link { color: #bdc3c7; }
-        .search-input { font-size: 13px; padding: 4px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(255,255,255,.1); color: #fff; outline: none; width: 180px; transition: .2s; }
-        .search-input::placeholder { color: rgba(255,255,255,.4); }
-        .search-input:focus { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.15); width: 240px; }
         .search-inline { display: flex; gap: 8px; margin-bottom: 16px; }
         .search-inline input { font-size: 13px; padding: 5px 12px; border: 1px solid #dee2e6; border-radius: 6px; outline: none; flex: 1; }
         .search-inline input:focus { border-color: #e94560; }
+        .sidebar-details summary::-webkit-details-marker { display: none; }
     </style>
 </head>
 <body>
 
-<nav class="navbar navbar-dark">
-    <div class="container">
-        <a class="navbar-brand" href="/">getWeb-View</a>
-        <span class="text-light opacity-75 me-auto ms-2" style="font-size: 13px;">爬虫数据面板</span>
-        <form action="/search" method="get" class="d-flex">
-            <input name="q" class="search-input" placeholder="搜索标题..." value="">
-        </form>
-    </div>
-</nav>
+<div class="layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">getWeb-View</div>
+        <div class="sidebar-divider"></div>
+        <a href="/" class="{{ 'active' if request.path == '/' }}">📊 仪表盘</a>
+        <details class="sidebar-details" {{ 'open' if request.path.startswith('/crawler/') }}>
+            <summary class="sidebar-parent {{ 'active' if request.path.startswith('/crawler/') }}">
+                🕷️ 爬虫列表 ({{ sidebar_crawlers|length }})
+            </summary>
+            {% for c in sidebar_crawlers %}
+            <a href="/crawler/{{ c }}" class="crawler-link {{ 'active' if request.path == '/crawler/' ~ c }}">{{ c }}</a>
+            {% endfor %}
+        </details>
+    </aside>
 
-<div class="container py-4">
-    {% block content %}{% endblock %}
+    <div class="main">
+        <div class="topbar">
+            <button class="toggle-btn" onclick="toggleSidebar()" title="收起侧边栏">
+                <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20" class="hamburger">
+                    <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM142.4 642.1L298.7 519a8.84 8.84 0 0 0 0-13.9L142.4 381.9c-5.8-4.6-14.4-.5-14.4 6.9v246.3a8.9 8.9 0 0 0 14.4 7z"></path>
+                </svg>
+            </button>
+            <form action="/search" method="get">
+                <input name="q" class="search-input-top" placeholder="搜索标题..." value="">
+            </form>
+        </div>
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
 </div>
+
+<script>
+function toggleSidebar() {
+    var sb = document.getElementById('sidebar');
+    sb.classList.toggle('collapsed');
+    localStorage.setItem('sidebar-collapsed', sb.classList.contains('collapsed'));
+}
+(function() {
+    if (localStorage.getItem('sidebar-collapsed') === 'true') {
+        document.getElementById('sidebar').classList.add('collapsed');
+    }
+})();
+</script>
 
 </body>
 </html>

@@ -2,8 +2,6 @@
 {% block title %}搜索{% endblock %}
 {% block content %}
 
-<a href="/" class="back-link mb-3 d-inline-block">← 返回仪表盘</a>
-
 <form class="search-inline" action="/search" method="get">
     <input name="q" placeholder="跨站搜索标题..." value="{{ q }}" autofocus>
     <button type="submit" class="btn btn-sm" style="background:#e94560;color:#fff;border:none;font-size:13px">搜索</button>

@@ -7,6 +7,19 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
+
+@app.context_processor
+def inject_sidebar():
+    """向所有模板注入侧边栏爬虫列表"""
+    try:
+        db = get_db()
+        crawlers = sorted(
+            c for c in db.list_collection_names() if c != "stats"
+        )
+    except Exception:
+        crawlers = []
+    return {"sidebar_crawlers": crawlers}
+
 # MONGO_URL set via environment or default
 _MONGO_PORT = os.environ.get("MONGO_PORT", "27017")
 _MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
