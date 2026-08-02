@@ -95,6 +95,13 @@
             <a href="/crawler/{{ c }}" class="crawler-link {{ 'active' if request.path == '/crawler/' ~ c }}">{{ c }}</a>
             {% endfor %}
         </details>
+        <details class="sidebar-details" {{ 'open' if request.path.startswith('/stats') }}>
+            <summary class="sidebar-parent {{ 'active' if request.path.startswith('/stats') }}">
+                📈 趋势统计
+            </summary>
+            <a href="/stats/trend" class="crawler-link {{ 'active' if request.path == '/stats/trend' }}">每日趋势</a>
+            <a href="/stats/today" class="crawler-link {{ 'active' if request.path == '/stats/today' }}">今日对比</a>
+        </details>
         <a href="/logs" class="{{ 'active' if request.path == '/logs' }}">📋 日志</a>
     </aside>
     <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>

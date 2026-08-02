@@ -124,12 +124,19 @@ def crawler_detail(name):
 
     coll = db[name]
     today_ts = beijing_today_start_ts()
+    filter_mode = request.args.get("filter", "today")
     q = request.args.get("q", "").strip()
 
     # 查询条件
     query = {}
+    if filter_mode == "today":
+        query["crawltime"] = {"$gte": today_ts}
     if q:
         query["title"] = {"$regex": re.escape(q), "$options": "i"}
+
+    # 总条数（不带时间过滤）和今日数（始终需要）
+    total_all = coll.count_documents({})
+    today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
 
     # 分页
     PER_PAGE = 20
@@ -144,7 +151,6 @@ def crawler_detail(name):
 
     skip = (page - 1) * PER_PAGE
     items = list(coll.find(query, sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
-    today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
 
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
     last = coll.find_one(sort=[("crawltime", -1)], projection={"crawltime": 1})
@@ -157,9 +163,11 @@ def crawler_detail(name):
         name=name,
         items=items,
         total=total_items,
+        total_all=total_all,
         total_pages=total_pages,
         page=page,
         q=q,
+        filter_mode=filter_mode,
         today_count=today_count,
         first_time=ts_to_beijing(first.get("crawltime") if first else None),
         last_time=ts_to_beijing(last.get("crawltime") if last else None),
@@ -263,7 +271,98 @@ def view_logs():
     )
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+@app.route("/stats/trend")
+def stats_trend():
+    """每日新增趋势折线图 — 仅聚合 Top 8 爬虫"""
+    db = get_db()
+    days = request.args.get("days", 7, type=int)
+    if days not in (7, 14, 30):
+        days = 7
 
+    tz = timezone(timedelta(hours=8))
+    since = datetime.now(tz) - timedelta(days=days)
+    since = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    since_ts = since.timestamp()
+
+    # 生成全部日期标签
+    all_dates = []
+    for i in range(days):
+        d = since + timedelta(days=i)
+        all_dates.append(d.strftime("%m-%d"))
+
+    # 阶段 1：快速统计各爬虫周期总量（只用 count，轻量）
+    crawler_totals = {}
+    for coll_name in sorted(db.list_collection_names()):
+        if coll_name == "stats":
+            continue
+        total = db[coll_name].count_documents(
+            {"crawltime": {"$exists": True, "$gte": since_ts}}
+        )
+        if total > 0:
+            crawler_totals[coll_name] = total
+
+    # 阶段 2：聚合所有有数据的爬虫按天统计，同时算出每日总量
+    top_names = sorted(crawler_totals, key=lambda k: crawler_totals[k], reverse=True)[:8]
+
+    crawler_trends = {}
+    daily_totals = {date: 0 for date in all_dates}
+
+    for name in crawler_totals:
+        coll = db[name]
+        pipeline = [
+            {"$match": {"crawltime": {"$gte": since_ts}}},
+            {"$group": {
+                "_id": {"$dateToString": {
+                    "format": "%m-%d",
+                    "date": {"$toDate": {"$multiply": ["$crawltime", 1000]}},
+                }},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"_id": 1}},
+        ]
+        daily = list(coll.aggregate(pipeline))
+        date_map = {d["_id"]: d["count"] for d in daily}
+
+        # 累加到每日总量
+        for date in all_dates:
+            daily_totals[date] += date_map.get(date, 0)
+
+        # Top 8 存入折线图数据
+        if name in top_names:
+            crawler_trends[name] = {
+                date: date_map.get(date, 0) for date in all_dates
+            }
+
+    # 转为有序列表给 Chart.js
+    daily_total_values = [daily_totals[date] for date in all_dates]
+
+    return render_template(
+        "stats_trend.html",
+        days=days,
+        all_dates=all_dates,
+        top_names=top_names,
+        crawler_trends=crawler_trends,
+        daily_total_values=daily_total_values,
+    )
+
+
+@app.route("/stats/today")
+def stats_today():
+    """今日各站新增对比柱状图 — 仅 count，秒级加载"""
+    db = get_db()
+    today_ts = beijing_today_start_ts()
+
+    counts = []
+    for coll_name in sorted(db.list_collection_names()):
+        if coll_name == "stats":
+            continue
+        n = db[coll_name].count_documents({"crawltime": {"$gte": today_ts}})
+        counts.append((coll_name, n))
+
+    counts.sort(key=lambda x: x[1], reverse=True)
+
+    return render_template("stats_today.html", counts=counts)
+
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)

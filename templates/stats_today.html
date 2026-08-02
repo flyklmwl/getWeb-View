@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}今日对比{% endblock %}
+
+{% block content %}
+<h5 style="margin:0 0 16px">📊 今日各站新增对比</h5>
+
+{% if counts %}
+<div class="stat-card p-3">
+    <canvas id="barChart" height="{{ [counts|length * 28, 300]|max }}"></canvas>
+</div>
+{% else %}
+<div class="error-box">
+    <p class="mb-0">📭 今日暂无数据</p>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+{% if counts %}
+new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for name, count in counts %}'{{ name }}',{% endfor %}],
+        datasets: [{
+            data: [{% for name, count in counts %}{{ count }},{% endfor %}],
+            backgroundColor: [{% for name, count in counts %}'{{ "#e94560" if count > 0 else "#bdc3c7" }}',{% endfor %}],
+            borderRadius: 4,
+            borderSkipped: false,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { beginAtZero: true, ticks: { font: { size: 12 }, precision: 0 } },
+            y: { ticks: { font: { size: 12 } } }
+        },
+        layout: { padding: { right: 30 } },
+    },
+    plugins: [{
+        id: 'barValues',
+        afterDatasetsDraw(chart) {
+            const ctx = chart.ctx;
+            const meta = chart.getDatasetMeta(0);
+            ctx.fillStyle = '#2c3e50';
+            ctx.font = 'bold 13px -apple-system, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            chart.data.datasets[0].data.forEach((v, i) => {
+                const bar = meta.data[i];
+                ctx.fillText(v, bar.x + 6, bar.y);
+            });
+        }
+    }]
+});
+{% endif %}
+</script>
+{% endblock %}

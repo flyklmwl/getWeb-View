@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}每日趋势{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 style="margin:0">📈 每日新增趋势</h5>
+    <div class="sort-bar">
+        <a href="?days=7" class="sort-btn {{ 'active' if days==7 }}">7天</a>
+        <a href="?days=14" class="sort-btn {{ 'active' if days==14 }}">14天</a>
+        <a href="?days=30" class="sort-btn {{ 'active' if days==30 }}">30天</a>
+    </div>
+</div>
+
+{% if top_names %}
+<div class="stat-card p-3 mb-3">
+    <div class="text-muted mb-2" style="font-size:12px">📊 每日抓取总量</div>
+    <div style="height: 160px;">
+        <canvas id="totalChart"></canvas>
+    </div>
+</div>
+
+<div class="stat-card p-3">
+    <div class="text-muted mb-2" style="font-size:12px">Top {{ top_names|length }} 爬虫每日新增趋势</div>
+    <div style="height: 340px;">
+        <canvas id="lineChart"></canvas>
+    </div>
+</div>
+{% else %}
+<div class="error-box">
+    <p class="mb-0">📭 所选时间范围内暂无数据</p>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+{% if top_names %}
+const COLORS = ['#e94560','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e74c3c','#f368e0'];
+
+new Chart(document.getElementById('lineChart'), {
+    type: 'line',
+    data: {
+        labels: {{ all_dates | tojson }},
+        datasets: [
+            {% for name in top_names %}
+            {
+                label: '{{ name }}',
+                data: [{% for d in all_dates %}{{ crawler_trends[name][d] }},{% endfor %}],
+                borderColor: COLORS[{{ loop.index0 }}],
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                tension: 0.35,
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: { boxWidth: 12, padding: 16, font: { size: 12 }, usePointStyle: true }
+            }
+        },
+        scales: {
+            y: { beginAtZero: true, ticks: { font: { size: 12 }, precision: 0 } },
+            x: { ticks: { font: { size: 12 } } }
+        },
+        interaction: { mode: 'index', intersect: false },
+    }
+});
+
+// ── 柱状图：每日抓取总量 ──
+new Chart(document.getElementById('totalChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ all_dates | tojson }},
+        datasets: [{
+            data: {{ daily_total_values | tojson }},
+            backgroundColor: '#3498db',
+            borderRadius: 4,
+            borderSkipped: false,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+        },
+        scales: {
+            y: { beginAtZero: true, ticks: { font: { size: 11 }, precision: 0 } },
+            x: { ticks: { font: { size: 11 } } }
+        },
+    },
+    plugins: [{
+        id: 'barValues',
+        afterDatasetsDraw(chart) {
+            const ctx = chart.ctx;
+            const meta = chart.getDatasetMeta(0);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 13px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            chart.data.datasets[0].data.forEach((v, i) => {
+                if (v > 0) {
+                    const bar = meta.data[i];
+                    ctx.fillText(v, bar.x, (bar.y + bar.base) / 2);
+                }
+            });
+        }
+    }]
+});
+{% endif %}
+</script>
+{% endblock %}
