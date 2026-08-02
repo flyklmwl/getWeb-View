@@ -33,6 +33,7 @@ _MONGO_PORT = os.environ.get("MONGO_PORT", "27017")
 _MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_URL = os.environ.get("MONGO_URL", f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}")
 LOGS_PATH = os.environ.get("LOGS_PATH", "/getweb-logs")
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "/getweb-config.yaml")
 
 
 DB_NAME = "webdata"
@@ -442,6 +443,87 @@ def stats_today():
     counts.sort(key=lambda x: x[1], reverse=True)
 
     return render_template("stats_today.html", counts=counts)
+
+
+def _cron_to_human(expr):
+    """将 cron 表达式转人类可读，仅处理 getWeb config.yaml 中出现的模式"""
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return expr
+    minute, hour, dom, month, dow = parts
+
+    # */N * * * * → 每 N 分钟
+    if minute.startswith("*/") and hour == "*" and dom == "*":
+        return f"每 {minute[2:]} 分钟"
+
+    # 0 */N * * * → 每 N 小时
+    if minute == "0" and hour.startswith("*/"):
+        return f"每 {hour[2:]} 小时"
+
+    # 0 * * * * → 每小时
+    if minute == "0" and hour == "*" and dom == "*":
+        return "每小时"
+
+    # M H * * * → 每天 HH:MM
+    if minute.isdigit() and hour.isdigit() and dom == "*" and month == "*" and dow == "*":
+        return f"每天 {int(hour):02d}:{int(minute):02d}"
+
+    return expr
+
+
+def _cron_frequency(expr):
+    """计算 cron 表达式的每日执行次数，用于排序"""
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return 0
+    minute, hour = parts[0], parts[1]
+
+    if minute.startswith("*/"):   # */N * * * *
+        return 1440 // int(minute[2:])
+    if minute == "0":
+        if hour.startswith("*/"):  # 0 */N * * *
+            return 24 // int(hour[2:])
+        if hour == "*":            # 0 * * * *
+            return 24
+    if minute.isdigit() and hour.isdigit():  # M H * * *
+        return 1
+    return 0
+
+
+@app.route("/config")
+def crawler_config():
+    """展示 getWeb config.yaml 中的爬虫调度配置"""
+    schedules = []
+    error = None
+
+    if os.path.isfile(CONFIG_PATH):
+        with open(CONFIG_PATH) as f:
+            raw = f.read()
+
+        import re
+        in_schedules = False
+        for line in raw.split("\n"):
+            if re.match(r'^schedules:', line):
+                in_schedules = True
+                continue
+            if in_schedules and re.match(r'^\w', line):
+                in_schedules = False
+                continue
+            if not in_schedules:
+                continue
+            m = re.match(r'^\s+(\w+):\s*"([^"]+)"', line)
+            if m:
+                name, cron = m.groups()
+                schedules.append({
+                    "name": name,
+                    "cron": cron,
+                    "human": _cron_to_human(cron),
+                })
+    else:
+        error = f"配置文件未找到：{CONFIG_PATH}"
+
+    schedules.sort(key=lambda s: _cron_frequency(s["cron"]), reverse=True)
+    return render_template("config.html", schedules=schedules, error=error)
 
 
 if __name__ == "__main__":

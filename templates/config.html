@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}爬虫配置{% endblock %}
+{% block content %}
+
+<h5 style="margin:0 0 16px">⚙️ 爬虫调度配置</h5>
+
+{% if error %}
+<div class="error-box">
+    <p class="mb-0">{{ error }}</p>
+</div>
+{% else %}
+<div class="stat-card p-3">
+    <table class="config-table">
+        <thead>
+            <tr>
+                <th>爬虫</th>
+                <th>Cron 表达式</th>
+                <th>抓取周期</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in schedules %}
+            <tr>
+                <td class="config-name">{{ s.name }}</td>
+                <td><code>{{ s.cron }}</code></td>
+                <td class="config-human">{{ s.human }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<style>
+.config-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.config-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6; color: #6c757d; font-weight: 600; font-size: 12px; }
+.config-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+.config-table tr:hover td { background: #f8f9fa; }
+.config-table code { font-size: 13px; background: #f0f0f0; padding: 2px 6px; border-radius: 4px; color: #e94560; }
+.config-name { font-weight: 600; color: #2c3e50; }
+.config-human { color: #27ae60; font-weight: 500; }
+</style>
+
+{% endblock %}

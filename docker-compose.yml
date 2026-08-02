@@ -8,8 +8,10 @@ services:
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - LOGS_PATH=/getweb-logs
+      - CONFIG_PATH=/getweb-config.yaml
     volumes:
       - /opt/getweb/logs:/getweb-logs:ro
+      - /opt/getweb/config.yaml:/getweb-config.yaml:ro
     networks:
       - web_net
 
