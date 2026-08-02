@@ -12,7 +12,7 @@
 
 <div class="row g-2 mb-3">
     <div class="col-md-3">
-        <a href="?filter=all{% if q %}&q={{ q }}{% endif %}"
+        <a href="?filter=all{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
            class="stat-card text-center text-decoration-none toggle-card {{ 'active' if filter_mode == 'all' }}"
            style="display:block">
             <div class="text-muted" style="font-size:12px">总条数</div>
@@ -20,7 +20,7 @@
         </a>
     </div>
     <div class="col-md-3">
-        <a href="?filter=today{% if q %}&q={{ q }}{% endif %}"
+        <a href="?filter=today{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
            class="stat-card text-center text-decoration-none toggle-card {{ 'active' if filter_mode == 'today' }}"
            style="display:block">
             <div class="text-muted" style="font-size:12px">今日新增</div>
@@ -52,22 +52,77 @@
 
 <form class="search-inline" action="/crawler/{{ name }}" method="get">
     <input type="hidden" name="filter" value="{{ filter_mode }}">
+    {% for e in active_extras %}<input type="hidden" name="extras" value="{{ e }}">{% endfor %}
     <input name="q" placeholder="在当前爬虫内搜索..." value="{{ q }}">
     <button type="submit" class="btn btn-sm" style="background:#e94560;color:#fff;border:none;font-size:13px">搜索</button>
     {% if q %}
-    <a href="/crawler/{{ name }}?filter={{ filter_mode }}" class="btn btn-sm" style="font-size:13px">清除</a>
+    <a href="/crawler/{{ name }}?filter={{ filter_mode }}{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}" class="btn btn-sm" style="font-size:13px">清除</a>
     {% endif %}
 </form>
+
+{% if extra_buttons %}
+<div class="extra-toggles">
+    {% for key, label, ft, url, is_active in extra_buttons %}
+    <a href="{{ url }}" class="extra-toggle-btn {{ 'active' if is_active }}">{{ label }}</a>
+    {% endfor %}
+</div>
+
+{% set has_active = extra_buttons|selectattr('4', 'eq', true)|list|length > 0 %}
+{% if has_active %}
+<form class="extra-filters" method="get" action="/crawler/{{ name }}">
+    <input type="hidden" name="filter" value="{{ filter_mode }}">
+    {% for e in active_extras %}<input type="hidden" name="extras" value="{{ e }}">{% endfor %}
+    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <div class="extra-filter-row">
+        {% for key, label, ft, url, is_active in extra_buttons %}
+        {% if is_active %}
+        <div class="extra-filter-item">
+            <span class="extra-filter-label">{{ label }}</span>
+            {% if ft == 'num' %}
+            {% set cur_op = extra_filters.get(key, ('gte', ''))[0] %}
+            {% set cur_val = extra_filters.get(key, ('', ''))[1] %}
+            <select name="ef_{{ key }}_op" class="ef-op">
+                <option value="gte" {{ 'selected' if cur_op == 'gte' }}>≥</option>
+                <option value="gt"  {{ 'selected' if cur_op == 'gt'  }}>&gt;</option>
+                <option value="eq"  {{ 'selected' if cur_op == 'eq'  }}>=</option>
+                <option value="lt"  {{ 'selected' if cur_op == 'lt'  }}>&lt;</option>
+                <option value="lte" {{ 'selected' if cur_op == 'lte' }}>≤</option>
+            </select>
+            <input type="number" name="ef_{{ key }}_val" class="ef-val" value="{{ cur_val }}" placeholder="数值">
+            {% else %}
+            {% set cur_val = extra_filters.get(key, ('', ''))[1] %}
+            <input type="text" name="ef_{{ key }}_val" class="ef-val ef-str" value="{{ cur_val }}" placeholder="包含...">
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+        <button type="submit" class="ef-submit">筛选</button>
+        {% if extra_filters %}
+        <a href="?filter={{ filter_mode }}{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}" class="ef-clear">清除</a>
+        {% endif %}
+    </div>
+</form>
+{% endif %}
+{% endif %}
 
 <div class="stat-card">
     {% if items %}
     {% for item in items %}
     <div class="item-row d-flex justify-content-between align-items-start">
-        <div class="item-title">
-            {% if item.get("link") %}
-            <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.get("title", "无标题") }}</a>
-            {% else %}
-            {{ item.get("title", "无标题") }}
+        <div>
+            <div class="item-title">
+                {% if item.get("link") %}
+                <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.get("title", "无标题") }}</a>
+                {% else %}
+                {{ item.get("title", "无标题") }}
+                {% endif %}
+            </div>
+            {% if item._extras %}
+            <div class="item-extras">
+                {% for label, value in item._extras %}
+                <span class="extra-badge">{{ label }} {{ value }}</span>
+                {% endfor %}
+            </div>
             {% endif %}
         </div>
         <div class="item-time text-nowrap ms-3">{{ item._time }}</div>
@@ -82,19 +137,19 @@
 <nav class="mt-3">
     <ul class="pagination justify-content-center">
         <li class="page-item {{ 'disabled' if page <= 1 }}">
-            <a class="page-link" href="?filter={{ filter_mode }}{% if q %}&q={{ q }}{% endif %}&page={{ page - 1 }}" tabindex="-1">上一页</a>
+            <a class="page-link" href="?filter={{ filter_mode }}{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}&page={{ page - 1 }}" tabindex="-1">上一页</a>
         </li>
         {% for p in range(1, total_pages + 1) %}
         {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
         <li class="page-item {{ 'active' if p == page }}">
-            <a class="page-link" href="?filter={{ filter_mode }}{% if q %}&q={{ q }}{% endif %}&page={{ p }}">{{ p }}</a>
+            <a class="page-link" href="?filter={{ filter_mode }}{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}&page={{ p }}">{{ p }}</a>
         </li>
         {% elif p == page - 3 or p == page + 3 %}
         <li class="page-item disabled"><span class="page-link">…</span></li>
         {% endif %}
         {% endfor %}
         <li class="page-item {{ 'disabled' if page >= total_pages }}">
-            <a class="page-link" href="?filter={{ filter_mode }}{% if q %}&q={{ q }}{% endif %}&page={{ page + 1 }}">下一页</a>
+            <a class="page-link" href="?filter={{ filter_mode }}{% if active_extras %}&extras={{ active_extras|join(',') }}{% endif %}{% if q %}&q={{ q }}{% endif %}&page={{ page + 1 }}">下一页</a>
         </li>
     </ul>
 </nav>
@@ -106,6 +161,33 @@
 .toggle-card { transition: .15s; border: 2px solid transparent; }
 .toggle-card:hover { border-color: #e94560; }
 .toggle-card.active { border-color: #e94560; background: rgba(233,69,96,.04); }
+.item-extras { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
+.extra-badge {
+    display: inline-block; background: #e8f4fd; color: #2471a3;
+    font-size: 11px; padding: 1px 7px; border-radius: 10px;
+}
+.extra-toggles { display: flex; gap: 6px; margin-bottom: 10px; }
+.extra-toggle-btn {
+    font-size: 12px; padding: 4px 12px; border-radius: 14px;
+    color: #6c757d; background: #f0f0f0; text-decoration: none;
+    transition: .15s; border: 1px solid transparent;
+}
+.extra-toggle-btn:hover { color: #e94560; border-color: #e94560; }
+.extra-toggle-btn.active { color: #fff; background: #e94560; }
+.extra-filters { margin-bottom: 10px; }
+.extra-filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.extra-filter-item { display: flex; align-items: center; gap: 4px; background: #f8f9fa; border-radius: 8px; padding: 4px 8px; }
+.extra-filter-label { font-size: 11px; color: #6c757d; white-space: nowrap; }
+.ef-op { font-size: 12px; padding: 2px 4px; border: 1px solid #dee2e6; border-radius: 4px; background: #fff; outline: none; }
+.ef-val { font-size: 12px; padding: 2px 6px; border: 1px solid #dee2e6; border-radius: 4px; outline: none; width: 70px; }
+.ef-val:focus { border-color: #e94560; }
+.ef-val.ef-str { width: 100px; }
+.ef-submit {
+    font-size: 12px; padding: 3px 10px; background: #e94560; color: #fff;
+    border: none; border-radius: 6px; cursor: pointer;
+}
+.ef-clear { font-size: 12px; color: #95a5a6; text-decoration: none; }
+.ef-clear:hover { color: #e94560; }
 </style>
 
 {% endblock %}

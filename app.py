@@ -7,6 +7,14 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
+# 详情页额外字段 → 显示标签映射
+EXTRA_LABELS = {
+    "reply_count": "💬",
+    "author": "👤",
+    "desc": "📝",
+    "summary": "📝",
+}
+
 
 @app.context_processor
 def inject_sidebar():
@@ -134,9 +142,46 @@ def crawler_detail(name):
     if q:
         query["title"] = {"$regex": re.escape(q), "$options": "i"}
 
-    # 总条数（不带时间过滤）和今日数（始终需要）
-    total_all = coll.count_documents({})
-    today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
+    # 扫描此爬虫可用的额外字段（取一份样本即可，同一爬虫字段一致）
+    available_extras = []
+    field_types = {}
+    sample = coll.find_one(sort=[("crawltime", -1)])
+    if sample:
+        for k in sample:
+            if k not in ("_id", "title", "link", "crawltime"):
+                label = EXTRA_LABELS.get(k, k)
+                ft = "num" if isinstance(sample[k], (int, float)) else "str"
+                available_extras.append((k, label, ft))
+                field_types[k] = ft
+
+    # 额外字段筛选：ef_<field>_op=gte&ef_<field>_val=50
+    extra_filters = {}
+    for k in field_types:
+        op = request.args.get(f"ef_{k}_op", "")
+        val = request.args.get(f"ef_{k}_val", "").strip()
+        if not op or not val:
+            continue
+        if field_types[k] == "num":
+            try:
+                num_val = float(val) if "." in val else int(val)
+            except ValueError:
+                continue
+            mongo_op = {"gte": "$gte", "gt": "$gt", "lte": "$lte", "lt": "$lt", "eq": "$eq"}.get(op, "$gte")
+            query[k] = {mongo_op: num_val}
+        else:
+            query[k] = {"$regex": re.escape(val), "$options": "i"}
+        extra_filters[k] = (op, val)
+
+    # 总条数和今日数：有筛选时反映筛选结果
+    if extra_filters:
+        extra_only = {k: v for k, v in query.items() if k not in ("crawltime", "title")}
+        total_all = coll.count_documents(extra_only) if extra_only else coll.count_documents({})
+        today_query = {"crawltime": {"$gte": today_ts}}
+        today_query.update(extra_only)
+        today_count = coll.count_documents(today_query)
+    else:
+        total_all = coll.count_documents({})
+        today_count = coll.count_documents({"crawltime": {"$gte": today_ts}})
 
     # 分页
     PER_PAGE = 20
@@ -152,11 +197,42 @@ def crawler_detail(name):
     skip = (page - 1) * PER_PAGE
     items = list(coll.find(query, sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
 
+    # 当前激活的额外字段
+    active_extras_raw = request.args.get("extras", "")
+    active_extras = [e for e in active_extras_raw.split(",") if e]
+
+    # 生成每个切换按钮的 URL
+    def _extras_url(toggle_key):
+        new = [e for e in active_extras if e != toggle_key]
+        if toggle_key not in active_extras:
+            new.append(toggle_key)
+        url = f"?filter={filter_mode}"
+        if new:
+            url += f"&extras={','.join(new)}"
+        if q:
+            url += f"&q={q}"
+        return url
+
+    extra_buttons = [
+        (key, label, ft, _extras_url(key), key in active_extras)
+        for key, label, ft in available_extras
+    ]
+
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
     last = coll.find_one(sort=[("crawltime", -1)], projection={"crawltime": 1})
 
     for item in items:
         item["_time"] = ts_to_beijing(item.get("crawltime"))
+        # 提取激活的额外字段为徽章
+        extras = []
+        for k in active_extras:
+            v = item.get(k)
+            if v is not None:
+                label = EXTRA_LABELS.get(k, k)
+                if isinstance(v, str) and len(v) > 50:
+                    v = v[:47] + "..."
+                extras.append((label, v))
+        item["_extras"] = extras
 
     return render_template(
         "crawler.html",
@@ -169,6 +245,10 @@ def crawler_detail(name):
         q=q,
         filter_mode=filter_mode,
         today_count=today_count,
+        extra_buttons=extra_buttons,
+        active_extras=active_extras,
+        extra_filters=extra_filters,
+        field_types=field_types,
         first_time=ts_to_beijing(first.get("crawltime") if first else None),
         last_time=ts_to_beijing(last.get("crawltime") if last else None),
         last_ago=ts_ago(last.get("crawltime") if last else None),
