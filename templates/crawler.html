@@ -60,6 +60,17 @@
     {% endif %}
 </form>
 
+{% if channels %}
+<div class="channel-bar">
+    <a href="?filter={{ filter_mode }}{% if q %}&q={{ q }}{% endif %}"
+       class="channel-pill {{ 'active' if not channel_filter }}">全部 ({{ channels|sum(attribute='count') }})</a>
+    {% for ch in channels %}
+    <a href="?filter={{ filter_mode }}&channel={{ ch._id }}{% if q %}&q={{ q }}{% endif %}"
+       class="channel-pill {{ 'active' if channel_filter == ch._id }}">{{ ch._id }} ({{ ch.count }})</a>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if extra_buttons %}
 <div class="extra-toggles">
     {% for key, label, ft, url, is_active in extra_buttons %}
@@ -191,6 +202,16 @@
 }
 .ef-clear { font-size: 12px; color: #95a5a6; text-decoration: none; }
 .ef-clear:hover { color: #e94560; }
+.channel-bar {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.channel-pill {
+    display: inline-block; font-size: 12px; padding: 4px 12px;
+    border-radius: 14px; color: #6c757d; background: #f0f0f0;
+    text-decoration: none; transition: .15s; border: 1px solid transparent;
+}
+.channel-pill:hover { color: #e94560; border-color: #e94560; }
+.channel-pill.active { color: #fff; background: #e94560; }
 .new-badge {
     display: inline-block; background: #e74c3c; color: #fff;
     font-size: 10px; font-weight: 700; padding: 1px 5px;

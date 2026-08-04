@@ -144,6 +144,19 @@ def crawler_detail(name):
     if q:
         query["title"] = {"$regex": re.escape(q), "$options": "i"}
 
+    # Telegram 频道筛选
+    channel_filter = request.args.get("channel", "").strip()
+    channels = []
+    if name == "telegram_channel":
+        pipeline = [
+            {"$match": {"crawltime": {"$gte": today_ts}} if filter_mode == "today" else {}},
+            {"$group": {"_id": "$channel", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+        ]
+        channels = list(coll.aggregate(pipeline))
+        if channel_filter:
+            query["channel"] = channel_filter
+
     # 扫描此爬虫可用的额外字段（取一份样本即可，同一爬虫字段一致）
     available_extras = []
     field_types = {}
@@ -245,6 +258,8 @@ def crawler_detail(name):
         name=name,
         items=items,
         latest_ts=latest_ts,
+        channels=channels,
+        channel_filter=channel_filter,
         total=total_items,
         total_all=total_all,
         total_pages=total_pages,
