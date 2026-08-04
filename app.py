@@ -223,8 +223,12 @@ def crawler_detail(name):
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
     last = coll.find_one(sort=[("crawltime", -1)], projection={"crawltime": 1})
 
+    latest_ts = None
     for item in items:
         item["_time"] = ts_to_beijing(item.get("crawltime"))
+        if item.get("crawltime"):
+            if latest_ts is None or item["crawltime"] > latest_ts:
+                latest_ts = item["crawltime"]
         # 提取激活的额外字段为徽章
         extras = []
         for k in active_extras:
@@ -240,6 +244,7 @@ def crawler_detail(name):
         "crawler.html",
         name=name,
         items=items,
+        latest_ts=latest_ts,
         total=total_items,
         total_all=total_all,
         total_pages=total_pages,

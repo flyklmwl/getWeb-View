@@ -116,6 +116,9 @@
                 {% else %}
                 {{ item.get("title", "无标题") }}
                 {% endif %}
+                {% if latest_ts and item.get("crawltime") == latest_ts %}
+                <span class="new-badge">NEW</span>
+                {% endif %}
             </div>
             {% if item._extras %}
             <div class="item-extras">
@@ -188,6 +191,17 @@
 }
 .ef-clear { font-size: 12px; color: #95a5a6; text-decoration: none; }
 .ef-clear:hover { color: #e94560; }
+.new-badge {
+    display: inline-block; background: #e74c3c; color: #fff;
+    font-size: 10px; font-weight: 700; padding: 1px 5px;
+    border-radius: 3px; margin-left: 6px; vertical-align: middle;
+    animation: new-pulse 1.5s ease-in-out infinite;
+    letter-spacing: 0.5px;
+}
+@keyframes new-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .6; }
+}
 </style>
 
 {% endblock %}
