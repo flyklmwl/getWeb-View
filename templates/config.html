@@ -2,43 +2,206 @@
 {% block title %}爬虫配置{% endblock %}
 {% block content %}
 
-<h5 style="margin:0 0 16px">⚙️ 爬虫调度配置</h5>
+<h5 style="margin:0 0 4px">⚙️ 爬虫调度配置</h5>
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+    <span style="font-size:13px;color:#7f8c8d">
+        共 <strong style="color:#2c3e50">{{ stats.total }}</strong> 个爬虫
+    </span>
+    <span style="display:flex;align-items:center;gap:4px;font-size:12px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#27ae60;display:inline-block"></span>
+        <span style="color:#27ae60;font-weight:600" id="stat-enabled">{{ stats.enabled }}</span> 启用
+    </span>
+    <span style="display:flex;align-items:center;gap:4px;font-size:12px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#bdc3c7;display:inline-block"></span>
+        <span style="color:#95a5a6;font-weight:600" id="stat-disabled">{{ stats.disabled }}</span> 禁用
+    </span>
+    <span style="flex:1"></span>
+    <span style="font-size:11px;color:#95a5a6">开关即时生效 · 修改 cron 点 ✓ 保存</span>
+</div>
 
 {% if error %}
 <div class="error-box">
     <p class="mb-0">{{ error }}</p>
 </div>
 {% else %}
-<div class="stat-card p-3">
+<div class="stat-card p-0" style="overflow:hidden">
     <table class="config-table">
         <thead>
             <tr>
+                <th style="width:36px"></th>
                 <th>爬虫</th>
-                <th>Cron 表达式</th>
-                <th>抓取周期</th>
+                <th>Cron</th>
+                <th>周期</th>
+                <th style="width:40px"></th>
             </tr>
         </thead>
         <tbody>
             {% for s in schedules %}
-            <tr>
+            <tr id="row-{{ s.name }}" class="{{ 'disabled-row' if not s.enabled }}">
+                <td style="text-align:center">
+                    <label class="toggle">
+                        <input type="checkbox" {{ 'checked' if s.enabled }}
+                               onchange="toggleCrawler('{{ s.name }}', this)">
+                        <span class="slider"></span>
+                    </label>
+                </td>
                 <td class="config-name">{{ s.name }}</td>
-                <td><code>{{ s.cron }}</code></td>
-                <td class="config-human">{{ s.human }}</td>
+                <td>
+                    <input class="cron-input" id="cron-{{ s.name }}"
+                           value="{{ s.cron }}" {{ 'disabled' if not s.enabled }}
+                           onkeydown="if(event.key==='Enter')saveCron('{{ s.name }}')">
+                </td>
+                <td class="config-human" id="human-{{ s.name }}">{{ s.human }}</td>
+                <td>
+                    <button class="save-btn" id="btn-{{ s.name }}"
+                            onclick="saveCron('{{ s.name }}')"
+                            {{ 'disabled' if not s.enabled }}>✓</button>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+<div id="toast" class="toast-msg"></div>
 {% endif %}
 
 <style>
+/* Toggle Switch */
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; vertical-align: middle; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #bdc3c7; border-radius: 22px; transition: .25s;
+}
+.slider:before {
+    content: ""; position: absolute; height: 16px; width: 16px;
+    left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .25s;
+}
+.toggle input:checked + .slider { background: #27ae60; }
+.toggle input:checked + .slider:before { transform: translateX(18px); }
+
+/* Table */
 .config-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.config-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6; color: #6c757d; font-weight: 600; font-size: 12px; }
-.config-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+.config-table th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #dee2e6; color: #6c757d; font-weight: 600; font-size: 12px; background: #f8f9fa; }
+.config-table td { padding: 10px 12px; border-bottom: 1px solid #eee; transition: .15s; }
 .config-table tr:hover td { background: #f8f9fa; }
-.config-table code { font-size: 13px; background: #f0f0f0; padding: 2px 6px; border-radius: 4px; color: #e94560; }
 .config-name { font-weight: 600; color: #2c3e50; }
-.config-human { color: #27ae60; font-weight: 500; }
+.config-human { color: #27ae60; font-weight: 500; font-size: 13px; }
+.disabled-row td { opacity: .45; }
+.disabled-row .config-human { color: #bdc3c7; }
+
+/* Cron input */
+.cron-input {
+    font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 13px;
+    border: 1px solid #dee2e6; border-radius: 4px; padding: 3px 8px;
+    width: 130px; outline: none; transition: .15s; background: #fafafa;
+}
+.cron-input:focus { border-color: #e94560; background: #fff; }
+.cron-input:disabled { background: #eee; color: #bbb; cursor: not-allowed; }
+
+/* Save button */
+.save-btn {
+    background: none; border: 1px solid #dee2e6; border-radius: 4px;
+    color: #27ae60; font-size: 14px; cursor: pointer; padding: 2px 8px; transition: .15s;
+}
+.save-btn:hover { background: #27ae60; color: #fff; border-color: #27ae60; }
+.save-btn:disabled { color: #ccc; border-color: #eee; cursor: not-allowed; background: none; }
+.save-btn:disabled:hover { background: none; color: #ccc; }
+
+/* Toast */
+.toast-msg {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #2c3e50; color: #fff; padding: 8px 20px; border-radius: 20px;
+    font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9999;
+}
+.toast-msg.show { opacity: 1; }
+
+/* Saving pulse */
+@keyframes saving-pulse { 0%,100% { opacity: 1 } 50% { opacity: .5 } }
+.saving { animation: saving-pulse .6s ease-in-out 2; }
 </style>
+
+<script>
+function toast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.classList.remove('show'); }, 2000);
+}
+
+function postForm(data) {
+    var form = new FormData();
+    for (var k in data) form.append(k, data[k]);
+    return fetch('/config', { method: 'POST', body: form }).then(function(r){ return r.json(); });
+}
+
+function toggleCrawler(name, cb) {
+    var row = document.getElementById('row-' + name);
+    var cron = document.getElementById('cron-' + name);
+    var btn = document.getElementById('btn-' + name);
+    row.classList.add('saving');
+
+    postForm({ action: 'toggle', name: name }).then(function(res){
+        row.classList.remove('saving');
+        if (res.ok) {
+            if (cb.checked) {
+                row.classList.remove('disabled-row');
+                cron.disabled = false;
+                btn.disabled = false;
+                updateStats(1, -1);
+                toast('✅ ' + name + ' 已启用');
+            } else {
+                row.classList.add('disabled-row');
+                cron.disabled = true;
+                btn.disabled = true;
+                updateStats(-1, 1);
+                toast('⏸️ ' + name + ' 已禁用');
+            }
+        } else {
+            cb.checked = !cb.checked;
+            toast('❌ 保存失败');
+        }
+    });
+}
+
+function updateStats(deltaEnabled, deltaDisabled) {
+    var el = document.getElementById('stat-enabled');
+    var dl = document.getElementById('stat-disabled');
+    if (el) el.textContent = parseInt(el.textContent) + deltaEnabled;
+    if (dl) dl.textContent = parseInt(dl.textContent) + deltaDisabled;
+}
+
+function saveCron(name) {
+    var input = document.getElementById('cron-' + name);
+    var btn = document.getElementById('btn-' + name);
+    var newCron = input.value.trim();
+    if (!newCron) return;
+
+    btn.classList.add('saving');
+    postForm({ action: 'update_cron', name: name, cron: newCron }).then(function(res){
+        btn.classList.remove('saving');
+        if (res.ok) {
+            // 更新人类可读描述
+            var human = cronToHuman(newCron);
+            document.getElementById('human-' + name).textContent = human;
+            toast('✅ ' + name + ' → ' + newCron);
+        } else {
+            toast('❌ 保存失败');
+        }
+    });
+}
+
+function cronToHuman(expr) {
+    var parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) return expr;
+    var m = parts[0], h = parts[1];
+    if (m.startsWith('*/') && h === '*') return '每 ' + m.slice(2) + ' 分钟';
+    if (m === '0' && h.startsWith('*/')) return '每 ' + h.slice(2) + ' 小时';
+    if (m === '0' && h === '*') return '每小时';
+    if (/^\d+$/.test(m) && /^\d+$/.test(h)) return '每天 ' + h.padStart(2,'0') + ':' + m.padStart(2,'0');
+    return expr;
+}
+</script>
 
 {% endblock %}

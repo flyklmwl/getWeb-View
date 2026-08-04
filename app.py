@@ -34,6 +34,7 @@ _MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_URL = os.environ.get("MONGO_URL", f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}")
 LOGS_PATH = os.environ.get("LOGS_PATH", "/getweb-logs")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/getweb-config.yaml")
+RELOAD_PATH = os.environ.get("RELOAD_PATH", "/getweb-reload")
 
 
 DB_NAME = "webdata"
@@ -490,40 +491,140 @@ def _cron_frequency(expr):
     return 0
 
 
-@app.route("/config")
+@app.route("/config", methods=["GET", "POST"])
 def crawler_config():
-    """展示 getWeb config.yaml 中的爬虫调度配置"""
-    schedules = []
+    """展示并编辑 getWeb config.yaml 中的爬虫调度配置"""
+    import yaml
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        
+        if not os.path.isfile(CONFIG_PATH):
+            return {"error": "配置文件未找到"}, 500
+        
+        with open(CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f)
+        
+        if action == "toggle":
+            name = request.form.get("name", "")
+            cron = cfg.get("schedules", {}).get(name, "")
+            if cron.startswith("#"):
+                cfg["schedules"][name] = cron.lstrip("#")
+            elif cron:
+                cfg["schedules"][name] = "#" + cron
+        
+        elif action == "update_cron":
+            name = request.form.get("name", "")
+            new_cron = request.form.get("cron", "").strip()
+            if name and new_cron:
+                old = cfg.get("schedules", {}).get(name, "")
+                prefix = "#" if old.startswith("#") else ""
+                cfg["schedules"][name] = prefix + new_cron
+        
+        # 写回 config.yaml
+        yaml_str = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        # 只在 schedules: 段内给未加引号的 cron 值统一加单引号
+        yaml_str = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        lines = yaml_str.split("\n")
+        in_schedules = False
+        for i, line in enumerate(lines):
+            if line.startswith("schedules:"):
+                in_schedules = True
+                continue
+            if in_schedules:
+                # 遇到下一个顶级 key（不缩进），退出 schedules 段
+                if line and not line[0].isspace():
+                    in_schedules = False
+                    continue
+                m = re.match(r'^(\s+)(\w+):\s+([\d\s\*/]+)$', line)
+                if m:
+                    indent, name, cron = m.groups()
+                    lines[i] = f"{indent}{name}: '{cron}'"
+        yaml_str = "\n".join(lines)
+        with open(CONFIG_PATH, "w") as f:
+            f.write(yaml_str)
+        
+        # 触发热加载
+        try:
+            with open(RELOAD_PATH, "w") as f:
+                f.write("reload")
+        except Exception:
+            pass
+        
+        return {"ok": True}
+    
+    # GET — 展示配置
+    schedules_list = []
     error = None
+    stats = {"total": 0, "enabled": 0, "disabled": 0}
 
     if os.path.isfile(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
-            raw = f.read()
-
-        import re
-        in_schedules = False
-        for line in raw.split("\n"):
-            if re.match(r'^schedules:', line):
-                in_schedules = True
-                continue
-            if in_schedules and re.match(r'^\w', line):
-                in_schedules = False
-                continue
-            if not in_schedules:
-                continue
-            m = re.match(r'^\s+(\w+):\s*"([^"]+)"', line)
-            if m:
-                name, cron = m.groups()
-                schedules.append({
-                    "name": name,
-                    "cron": cron,
-                    "human": _cron_to_human(cron),
-                })
+            cfg = yaml.safe_load(f)
+        
+        for name, cron_expr in cfg.get("schedules", {}).items():
+            disabled = cron_expr.startswith("#")
+            clean_cron = cron_expr.lstrip("#")
+            schedules_list.append({
+                "name": name,
+                "cron": clean_cron,
+                "cron_raw": cron_expr,
+                "human": _cron_to_human(clean_cron),
+                "enabled": not disabled,
+                "freq": _cron_frequency(clean_cron),
+            })
+            stats["total"] += 1
+            if disabled:
+                stats["disabled"] += 1
+            else:
+                stats["enabled"] += 1
     else:
         error = f"配置文件未找到：{CONFIG_PATH}"
 
-    schedules.sort(key=lambda s: _cron_frequency(s["cron"]), reverse=True)
-    return render_template("config.html", schedules=schedules, error=error)
+    schedules_list.sort(key=lambda s: s["freq"], reverse=True)
+    return render_template("config.html", schedules=schedules_list, stats=stats, error=error)
+
+
+@app.route("/api/today")
+def api_today():
+    """导出今日所有抓取数据为 JSON，供 AI 日报等消费。
+
+    Query params:
+        compact=1   默认，仅返回 title/link/source（~50KB/百条）
+        full=1      返回完整字段
+    """
+    db = get_db()
+    today_ts = beijing_today_start_ts()
+    compact = request.args.get("full") != "1"
+
+    result = {}
+    total = 0
+    for coll_name in sorted(db.list_collection_names()):
+        if coll_name == "stats":
+            continue
+        items = list(db[coll_name].find(
+            {"crawltime": {"$gte": today_ts}},
+            sort=[("crawltime", -1)],
+        ))
+        if not items:
+            continue
+        for item in items:
+            item.pop("_id", None)
+            if compact:
+                # 只保留核心字段，大幅减小体积
+                item = {
+                    "title": item.get("title", ""),
+                    "link": item.get("link", ""),
+                }
+            item["source"] = coll_name
+            result.setdefault(coll_name, []).append(item)
+            total += 1
+
+    # 按数量排序
+    sorted_result = dict(sorted(result.items(), key=lambda x: len(x[1]), reverse=True))
+    sorted_result["_total"] = total
+    sorted_result["_date"] = datetime.fromtimestamp(today_ts, tz=timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+    return sorted_result
 
 
 if __name__ == "__main__":
