@@ -20,7 +20,7 @@
 new Chart(document.getElementById('barChart'), {
     type: 'bar',
     data: {
-        labels: [{% for name, count in counts %}'{{ name }}',{% endfor %}],
+        labels: [{% for name, count in counts %}'{{ display_name(name) }}',{% endfor %}],
         datasets: [{
             data: [{% for name, count in counts %}{{ count }},{% endfor %}],
             backgroundColor: [{% for name, count in counts %}'{{ "#e94560" if count > 0 else "#bdc3c7" }}',{% endfor %}],

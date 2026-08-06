@@ -92,7 +92,7 @@
                 🕷️ 爬虫列表 ({{ sidebar_crawlers|length }})
             </summary>
             {% for c in sidebar_crawlers %}
-            <a href="/crawler/{{ c }}" class="crawler-link {{ 'active' if request.path == '/crawler/' ~ c }}">{{ c }}</a>
+            <a href="/crawler/{{ c.name }}" class="crawler-link {{ 'active' if request.path == '/crawler/' ~ c.name }}">{{ c.display }}</a>
             {% endfor %}
         </details>
         <details class="sidebar-details" {{ 'open' if request.path.startswith('/stats') }}>

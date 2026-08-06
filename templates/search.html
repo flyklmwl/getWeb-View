@@ -13,7 +13,7 @@
     {% if sources %}
     <div class="source-summary">
         {% for name, count in sources.items() %}
-        <a href="/crawler/{{ name }}?q={{ q }}" class="source-count">{{ name }} {{ count }}</a>
+        <a href="/crawler/{{ name }}?q={{ q }}" class="source-count">{{ display_name(name) }} {{ count }}</a>
         {% endfor %}
     </div>
     {% endif %}

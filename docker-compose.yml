@@ -10,10 +10,12 @@ services:
       - LOGS_PATH=/getweb-logs
       - CONFIG_PATH=/getweb-config.yaml
       - RELOAD_PATH=/getweb-reload
+      - LABELS_PATH=/getweb-labels/labels.yaml
     volumes:
       - /opt/getweb/logs:/getweb-logs:ro
       - /opt/getweb/config.yaml:/getweb-config.yaml:rw
       - /opt/getweb/.reload:/getweb-reload
+      - /opt/getweb/labels.yaml:/getweb-labels/labels.yaml:ro
     networks:
       - web_net
 

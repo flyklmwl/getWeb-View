@@ -43,7 +43,7 @@ new Chart(document.getElementById('lineChart'), {
         datasets: [
             {% for name in top_names %}
             {
-                label: '{{ name }}',
+                label: '{{ display_name(name) }}',
                 data: [{% for d in all_dates %}{{ crawler_trends[name][d] }},{% endfor %}],
                 borderColor: COLORS[{{ loop.index0 }}],
                 backgroundColor: 'transparent',

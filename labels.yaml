@@ -1,0 +1,111 @@
+# getWeb-View 爬虫标签映射
+# 每行格式：collection名 → 显示名 + 分类
+# 新增爬虫时只需加一行，无需改代码
+
+m_58_shangpu:
+  display: "58同城商铺"
+  category: "房产"
+
+anjuke_cs:
+  display: "安居客房源"
+  category: "房产"
+
+ke_ershoufang:
+  display: "贝壳二手房"
+  category: "房产"
+
+toutiao:
+  display: "今日头条"
+  category: "新闻"
+
+weibo:
+  display: "微博热搜"
+  category: "新闻"
+
+sina_sport:
+  display: "新浪体育"
+  category: "新闻"
+
+v2ex:
+  display: "V2EX"
+  category: "技术"
+
+zhihu:
+  display: "知乎热榜"
+  category: "技术"
+
+tech51cto:
+  display: "51CTO"
+  category: "技术"
+
+hellogithub:
+  display: "HelloGitHub"
+  category: "技术"
+
+reddit:
+  display: "Reddit编程"
+  category: "技术"
+
+game_3dm:
+  display: "3DM游戏"
+  category: "游戏"
+
+game_3dm_dj:
+  display: "3DM单机"
+  category: "游戏"
+
+game_tgbus:
+  display: "电玩巴士"
+  category: "游戏"
+
+game_psnine:
+  display: "PSN中文站"
+  category: "游戏"
+
+steam:
+  display: "Steam新游"
+  category: "游戏"
+
+gamer520:
+  display: "Gamer520"
+  category: "游戏"
+
+tieba:
+  display: "贴吧热帖"
+  category: "社区"
+
+bangumi:
+  display: "Bangumi"
+  category: "社区"
+
+bilibili:
+  display: "B站热门"
+  category: "社区"
+
+feiyue:
+  display: "绯月汉化"
+  category: "社区"
+
+feiyue_home:
+  display: "绯月首页"
+  category: "社区"
+
+telegram_channel:
+  display: "Telegram频道"
+  category: "社区"
+
+coins:
+  display: "币圈资讯"
+  category: "其他"
+
+iplaysoft:
+  display: "异次元软件"
+  category: "其他"
+
+# Telegram 频道名 → 显示名映射
+# 新增频道订阅时在此加一行即可
+channels:
+  btcnewsdaily: "币圈日报"
+  jdbroo: "京东羊毛"
+  QukanMovie: "趣看电影"
+  Lsp115: "Lsp115"

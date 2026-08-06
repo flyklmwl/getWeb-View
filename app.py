@@ -2,6 +2,7 @@ import os
 import re
 from datetime import datetime, timezone, timedelta
 
+import yaml
 from flask import Flask, render_template, request
 from pymongo import MongoClient
 
@@ -15,18 +16,50 @@ EXTRA_LABELS = {
     "summary": "📝",
 }
 
+# 爬虫标签映射：collection 名 → display 名 + 分类
+LABELS_PATH = os.environ.get("LABELS_PATH", "/getweb-labels/labels.yaml")
+_labels_cache = None
+
+
+def _load_labels():
+    """加载 labels.yaml，缓存避免重复读盘。"""
+    global _labels_cache
+    if _labels_cache is not None:
+        return _labels_cache
+    if os.path.isfile(LABELS_PATH):
+        with open(LABELS_PATH) as f:
+            _labels_cache = yaml.safe_load(f) or {}
+    else:
+        _labels_cache = {}
+    return _labels_cache
+
+
+def display_name(coll_name):
+    """collection 名 → 人类可读显示名。"""
+    labels = _load_labels()
+    entry = labels.get(coll_name, {})
+    return entry.get("display", coll_name)
+
+
+def category_of(coll_name):
+    """collection 名 → 分类名。"""
+    labels = _load_labels()
+    entry = labels.get(coll_name, {})
+    return entry.get("category", "未分类")
+
 
 @app.context_processor
 def inject_sidebar():
-    """向所有模板注入侧边栏爬虫列表"""
+    """向所有模板注入侧边栏爬虫列表（含显示名）"""
     try:
         db = get_db()
-        crawlers = sorted(
+        raw = sorted(
             c for c in db.list_collection_names() if c != "stats"
         )
+        crawlers = [{"name": c, "display": display_name(c)} for c in raw]
     except Exception:
         crawlers = []
-    return {"sidebar_crawlers": crawlers}
+    return {"sidebar_crawlers": crawlers, "display_name": display_name}
 
 # MONGO_URL set via environment or default
 _MONGO_PORT = os.environ.get("MONGO_PORT", "27017")
@@ -83,12 +116,15 @@ def dashboard():
     today_ts = beijing_today_start_ts()
 
     crawlers = []
+    grand_total = 0  # 爬取总数（不限时间）
     for coll_name in sorted(db.list_collection_names()):
         if coll_name == "stats":
             continue
 
         coll = db[coll_name]
         count = coll.count_documents({"crawltime": {"$gte": today_ts}})
+        total_docs = coll.count_documents({})
+        grand_total += total_docs
 
         last = coll.find_one(
             sort=[("crawltime", -1)], projection={"crawltime": 1}
@@ -97,7 +133,10 @@ def dashboard():
 
         crawlers.append({
             "name": coll_name,
+            "display": display_name(coll_name),
+            "category": category_of(coll_name),
             "count": count,
+            "total_docs": total_docs,
             "last_ts": last_ts,
             "ago": ts_ago(last_ts),
         })
@@ -114,12 +153,24 @@ def dashboard():
         active.sort(key=lambda c: c["count"], reverse=True)
     idle.sort(key=lambda c: c["last_ts"] or 0, reverse=True)
 
+    # 按分类分组（有产出的）
+    categories = {}
+    for c in active:
+        cat = c["category"]
+        categories.setdefault(cat, []).append(c)
+
+    # 分类排序：按组内总数降序
+    cat_order = sorted(categories, key=lambda cat: sum(x["count"] for x in categories[cat]), reverse=True)
+
     return render_template(
         "dashboard.html",
         crawlers=crawlers,
         active=active,
         idle=idle,
+        categories=categories,
+        cat_order=cat_order,
         total=total,
+        grand_total=grand_total,
         total_crawlers=len(crawlers),
         sort=sort_by,
     )
@@ -153,7 +204,12 @@ def crawler_detail(name):
             {"$group": {"_id": "$channel", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
         ]
-        channels = list(coll.aggregate(pipeline))
+        raw_channels = list(coll.aggregate(pipeline))
+        labels = _load_labels()
+        chan_labels = labels.get("channels", {})
+        for ch in raw_channels:
+            ch["display"] = chan_labels.get(ch["_id"], ch["_id"])
+        channels = raw_channels
         if channel_filter:
             query["channel"] = channel_filter
 
@@ -256,6 +312,7 @@ def crawler_detail(name):
     return render_template(
         "crawler.html",
         name=name,
+        display=display_name(name),
         items=items,
         latest_ts=latest_ts,
         channels=channels,
