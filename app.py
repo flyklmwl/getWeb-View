@@ -266,7 +266,7 @@ def crawler_detail(name):
         page = total_pages
 
     skip = (page - 1) * PER_PAGE
-    items = list(coll.find(query, sort=[("crawltime", -1)]).skip(skip).limit(PER_PAGE))
+    items = list(coll.find(query, sort=[("crawltime", -1), ("_id", -1)]).skip(skip).limit(PER_PAGE))
 
     # 当前激活的额外字段
     active_extras_raw = request.args.get("extras", "")
@@ -292,12 +292,9 @@ def crawler_detail(name):
     first = coll.find_one(sort=[("crawltime", 1)], projection={"crawltime": 1})
     last = coll.find_one(sort=[("crawltime", -1)], projection={"crawltime": 1})
 
-    latest_ts = None
+    latest_ts = last["crawltime"] if last else None
     for item in items:
         item["_time"] = ts_to_beijing(item.get("crawltime"))
-        if item.get("crawltime"):
-            if latest_ts is None or item["crawltime"] > latest_ts:
-                latest_ts = item["crawltime"]
         # 提取激活的额外字段为徽章
         extras = []
         for k in active_extras:
@@ -359,7 +356,7 @@ def search():
         source_counts[coll_name] = matched
         items = list(coll.find(
             {"title": regex},
-            sort=[("crawltime", -1)],
+            sort=[("crawltime", -1), ("_id", -1)],
             limit=MAX_RESULTS - len(results),
         ))
 
@@ -427,6 +424,7 @@ def view_logs():
         level=level,
         crawler=crawler,
         lines=lines,
+        crawler_names=[c for c in get_db().list_collection_names() if c != "stats"],
     )
 
 
@@ -521,6 +519,18 @@ def stats_today():
     counts.sort(key=lambda x: x[1], reverse=True)
 
     return render_template("stats_today.html", counts=counts)
+
+
+def _dedup_label(ccfg: dict, is_configured: bool) -> str:
+    """去重策略的人类可读标签。未配置返回空串，coins 显式 null → 不去重"""
+    if not is_configured:
+        return ""
+    dk = ccfg.get("dedup_key")
+    if dk is None:
+        return "无去重"
+    if dk:
+        return dk
+    return "link"
 
 
 def _cron_to_human(expr):
@@ -639,16 +649,22 @@ def crawler_config():
         with open(CONFIG_PATH) as f:
             cfg = yaml.safe_load(f)
         
+        crawlers_cfg = cfg.get("crawlers", {})
+        
         for name, cron_expr in cfg.get("schedules", {}).items():
             disabled = cron_expr.startswith("#")
             clean_cron = cron_expr.lstrip("#")
+            ccfg = crawlers_cfg.get(name, {})
+            is_configured = name in crawlers_cfg
             schedules_list.append({
-                "name": name,
+                "name": name, "display": display_name(name),
                 "cron": clean_cron,
                 "cron_raw": cron_expr,
                 "human": _cron_to_human(clean_cron),
                 "enabled": not disabled,
                 "freq": _cron_frequency(clean_cron),
+                "dedup_key": _dedup_label(ccfg, is_configured),
+                "update_fields": ccfg.get("update_fields"),
             })
             stats["total"] += 1
             if disabled:

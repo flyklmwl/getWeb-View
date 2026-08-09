@@ -21,7 +21,12 @@
         </select>
     </div>
     <div class="col-auto">
-        <input type="text" class="form-control form-control-sm" placeholder="爬虫名筛选..." style="font-size:13px;width:140px" id="crawler-filter" value="{{ crawler }}" onchange="applyFilter()">
+        <input type="text" class="form-control form-control-sm" placeholder="爬虫名筛选..." style="font-size:13px;width:140px" id="crawler-filter" value="{{ crawler }}" onchange="applyFilter()" list="crawler-list">
+        <datalist id="crawler-list">
+            {% for name in crawler_names %}
+            <option value="{{ name }}">
+            {% endfor %}
+        </datalist>
     </div>
     <div class="col-auto">
         <select class="form-select form-select-sm" style="font-size:13px" onchange="location.search='?file={{ current_file }}&lines='+this.value+'&level={{ level }}&crawler={{ crawler }}'">
