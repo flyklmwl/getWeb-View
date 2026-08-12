@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 
 import yaml
 from flask import Flask, render_template, request
@@ -268,21 +269,40 @@ def crawler_detail(name):
     skip = (page - 1) * PER_PAGE
     items = list(coll.find(query, sort=[("crawltime", -1), ("_id", -1)]).skip(skip).limit(PER_PAGE))
 
+    # 当前所有查询参数（排除 page），打包成 query string 供模板复用
+    base_params = {k: v for k, v in request.args.items() if k != "page"}
+    base_qs = urlencode(base_params, doseq=True)
+
+    # 模板用：基于当前参数生成 URL，传入 None/空字符串即可删除该参数
+    def qs(**overrides):
+        params = dict(base_params)
+        for k, v in overrides.items():
+            if v is None or v == "":
+                params.pop(k, None)
+            else:
+                params[k] = v
+        q = urlencode(params, doseq=True)
+        return "?" + q if q else "?"
+
+    # 清除额外字段筛选的 URL（去掉 extras + 所有 ef_*）
+    clear_extras_params = {k: v for k, v in base_params.items() if not k.startswith("ef_") and k != "extras"}
+    clear_extras_qs = "?" + urlencode(clear_extras_params, doseq=True) if clear_extras_params else "?"
+
     # 当前激活的额外字段
     active_extras_raw = request.args.get("extras", "")
     active_extras = [e for e in active_extras_raw.split(",") if e]
 
-    # 生成每个切换按钮的 URL
+    # 生成每个切换按钮的 URL（基于 base_params 修改 extras）
     def _extras_url(toggle_key):
         new = [e for e in active_extras if e != toggle_key]
         if toggle_key not in active_extras:
             new.append(toggle_key)
-        url = f"?filter={filter_mode}"
+        params = dict(base_params)
         if new:
-            url += f"&extras={','.join(new)}"
-        if q:
-            url += f"&q={q}"
-        return url
+            params["extras"] = ",".join(new)
+        else:
+            params.pop("extras", None)
+        return "?" + urlencode(params, doseq=True) if params else "?"
 
     extra_buttons = [
         (key, label, ft, _extras_url(key), key in active_extras)
@@ -325,6 +345,9 @@ def crawler_detail(name):
         active_extras=active_extras,
         extra_filters=extra_filters,
         field_types=field_types,
+        base_qs=base_qs,
+        qs=qs,
+        clear_extras_qs=clear_extras_qs,
         first_time=ts_to_beijing(first.get("crawltime") if first else None),
         last_time=ts_to_beijing(last.get("crawltime") if last else None),
         last_ago=ts_ago(last.get("crawltime") if last else None),
