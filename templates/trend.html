@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ display }} · {{ label or '' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 style="margin:0">📈 {{ label }} · {{ field_label }} 历史趋势</h5>
+    <a href="/crawler/{{ name }}" class="btn btn-sm btn-outline-secondary">← 返回排行榜</a>
+</div>
+
+{% if error %}
+<div class="error-box">
+    <p class="mb-0">📭 {{ error }}</p>
+    {% if name %}<a href="/crawler/{{ name }}" class="d-inline-block mt-2">返回排行榜</a>{% endif %}
+</div>
+{% elif points %}
+<div class="stat-card p-3">
+    <div class="text-muted mb-2" style="font-size:12px">{{ display }} · {{ label }} · {{ field_label }}（{{ points }} 个数据点）</div>
+    <div style="height: 380px;">
+        <canvas id="trendChart"></canvas>
+    </div>
+</div>
+{% else %}
+<div class="error-box"><p class="mb-0">📭 暂无历史数据</p></div>
+{% endif %}
+
+{% if points %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+        labels: {{ labels | tojson }},
+        datasets: [{
+            label: '{{ field_label }}',
+            data: {{ values | tojson }},
+            borderColor: '#e94560',
+            backgroundColor: 'rgba(233, 69, 96, 0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            tension: 0.35,
+            fill: true,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) {
+                        const fmt = {{ fmt_values | tojson }};
+                        return '{{ field_label }}: ' + (fmt[ctx.dataIndex] ?? ctx.parsed.y);
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { ticks: { font: { size: 12 } } },
+            x: { ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
+        },
+        interaction: { mode: 'index', intersect: false },
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

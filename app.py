@@ -38,6 +38,24 @@ EXTRA_LABELS = {
     "item_id": "🆔",
     "prop_id": "🆔",
     "listing_id": "🆔",
+    # DeFi / 市场数据
+    "tvl": "💰",
+    "totalTvl": "💰",
+    "circulating": "💰",
+    "liquidity": "💰",
+    "tokenSymbol": "🪙",
+    "pegMechanism": "🔒",
+    "impliedApy": "📈",
+    "underlyingApy": "📈",
+    "yieldMin": "📉",
+    "yieldMax": "📈",
+    "change_7d": "📊",
+    "expiry": "📅",
+    "protocol": "🏷️",
+    "address": "🔗",
+    "chains": "⛓️",
+    "views": "👁️",
+    "likes": "❤️",
 }
 
 # 爬虫标签映射：collection 名 → display 名 + 分类
@@ -206,6 +224,227 @@ def dashboard():
     )
 
 
+# ---- 快照类数据（累积历史）排行榜视图 ----
+
+_SNAPSHOT_MONEY_KEYS = ("tvl", "circulating", "liquidity", "mcap", "marketcap", "market_cap", "volume", "price")
+# 涨跌幅/占比：值本身已是百分数（CMC percent_change_24h=-0.79 → -0.79%；DeFiLlama change_7d=0.45 → +0.45%），直接加 % 号
+_SNAPSHOT_PERCENT_KEYS = ("change", "dominance")
+# 利率/收益率：值是小数（Pendle impliedApy=0.0411 → 4.11%），需 ×100
+_SNAPSHOT_DECIMAL_PCT_KEYS = ("apy", "roi", "rate", "yield")
+
+# 快照排行榜表头的中文字段标签
+SNAPSHOT_FIELD_LABELS = {
+    "tvl": "锁仓量",
+    "totalTvl": "锁仓量",
+    "circulating": "流通量",
+    "liquidity": "流动性",
+    "mcap": "市值",
+    "marketcap": "市值",
+    "price": "价格",
+    "rank": "市值排名",
+    "change_1h": "1h涨跌",
+    "change_24h": "24h涨跌",
+    "change_7d": "7d涨跌",
+    "market_cap": "市值",
+    "dominance": "市值占比",
+    "volume_24h": "24h成交额",
+    "supply": "流通量",
+    "max_supply": "最大供应量",
+    "tokenSymbol": "代币",
+    "pegMechanism": "锚定",
+    "impliedApy": "隐含利率",
+    "underlyingApy": "底层APY",
+    "yieldMin": "收益下限",
+    "yieldMax": "收益上限",
+    "change_7d": "7天变化",
+    "expiry": "到期日",
+    "protocol": "协议",
+    "address": "地址",
+    "chains": "支持链",
+    "views": "阅读量",
+    "likes": "点赞",
+    "category": "分类",
+    "name": "名称",
+}
+
+# 快照爬虫的实体唯一键：title 同名撞车时用更唯一的字段
+SNAPSHOT_ENTITY_KEY = {
+    "pendle": "address",               # Pendle 同名多到期日，用合约地址
+    "defillama_stablecoins": "name",   # 稳定币 symbol 撞车（USDS 两项目），用全名
+}
+
+
+def _entity_key(name, doc):
+    """快照数据的实体唯一键，默认 title。"""
+    return doc.get(SNAPSHOT_ENTITY_KEY.get(name, "title"))
+
+
+def _entity_label(name, doc):
+    """趋势页显示的实体名：pendle 加到期日，stablecoins 用全名。"""
+    if name == "pendle":
+        label = doc.get("title") or ""
+        expiry = doc.get("expiry")
+        if expiry:
+            label = f"{label} · {expiry}"
+        return label
+    if name == "defillama_stablecoins":
+        return doc.get("name") or doc.get("title") or ""
+    return doc.get("title") or ""
+
+
+def _snapshot_crawlers():
+    """快照类爬虫（config.yaml crawlers 段 dedup_key=null 的），详情页用排行榜视图。"""
+    try:
+        with open(CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f)
+        return {
+            name for name, c in cfg.get("crawlers", {}).items()
+            if isinstance(c, dict) and "dedup_key" in c and c["dedup_key"] is None
+        }
+    except Exception:
+        return set()
+
+
+def _fmt_usd(value):
+    if value >= 1e8:
+        return f"${value / 1e8:.2f}亿"
+    if value >= 1e4:
+        return f"${value / 1e4:.2f}万"
+    return f"${value:,.2f}"
+
+
+def _fmt_snapshot_value(key, value):
+    """格式化快照字段：金额→$X亿，利率→小数×100%，涨跌→百分数直接%，整数→千分位，字符串原样。"""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if not isinstance(value, (int, float)):
+        if isinstance(value, str) and len(value) > 22:
+            return value[:19] + "..."
+        return value
+    kl = key.lower()
+    if any(k in kl for k in _SNAPSHOT_PERCENT_KEYS):
+        # 涨跌幅/占比已是百分数（-0.79 → -0.79%）
+        sign = "+" if value > 0 else ""
+        return f"{sign}{value:.2f}%"
+    if any(k in kl for k in _SNAPSHOT_DECIMAL_PCT_KEYS):
+        # 利率/收益率是小数（0.0411 → +4.11%）
+        pct = value * 100
+        sign = "+" if value > 0 else ""
+        return f"{sign}{pct:.2f}%"
+    if any(k in kl for k in _SNAPSHOT_MONEY_KEYS):
+        if "price" in kl:
+            return f"${value:,.2f}"   # 价格不缩写万/亿
+        return _fmt_usd(value)
+    if isinstance(value, int):
+        return f"{value:,}"          # 整数（rank/供应量）千分位、无小数
+    return f"{value:,.2f}"
+
+
+def _snapshot_sort_key(num_fields):
+    """快照数据的主排序字段：金额字段优先，否则第一个数值字段。"""
+    for k in num_fields:
+        if any(m in k.lower() for m in _SNAPSHOT_MONEY_KEYS):
+            return k
+    return num_fields[0] if num_fields else None
+
+
+def _snapshot_view(coll, name):
+    """快照类数据的排行榜视图：取最新一批快照，按主数值字段排序。"""
+    latest = coll.find_one(sort=[("crawltime", -1)])
+    if not latest:
+        return render_template("snapshot.html", name=name, display=display_name(name),
+                               columns=[], num_fields=[], rows=[], sort_key=None, error=None)
+
+    latest_ts = latest["crawltime"]
+    rows = list(coll.find({"crawltime": latest_ts}))
+
+    # 识别字段（排除内部字段），分数值 / 字符串
+    sample = rows[0] if rows else latest
+    num_fields = []
+    str_fields = []
+    for k in sample:
+        if k in ("_id", "crawltime", "source", "title", "url", "slug", "gecko_id"):
+            continue
+        v = sample[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            continue
+        if isinstance(v, (int, float)):
+            num_fields.append(k)
+        else:
+            str_fields.append(k)
+
+    columns = num_fields + str_fields
+    col_labels = [(k, SNAPSHOT_FIELD_LABELS.get(k, k)) for k in columns]
+
+    # 排序：sort 参数指定字段，order=asc/desc，默认金额字段降序
+    sort_key = request.args.get("sort") or _snapshot_sort_key(num_fields)
+    order = request.args.get("order", "desc")
+    if sort_key and sort_key in num_fields:
+        reverse = order != "asc"
+        rows.sort(
+            key=lambda r: (r.get(sort_key) if isinstance(r.get(sort_key), (int, float)) else -float("inf")),
+            reverse=reverse,
+        )
+
+    def sort_url(field):
+        new_order = "asc" if (field == sort_key and order == "desc") else "desc"
+        return f"?sort={field}&order={new_order}"
+
+    for i, r in enumerate(rows, 1):
+        r["_rank"] = i
+        r["_entity"] = _entity_key(name, r)
+        r["_entity_label"] = _entity_label(name, r)
+        r["_fmt"] = {k: _fmt_snapshot_value(k, r.get(k)) for k in columns}
+
+    return render_template("snapshot.html", name=name, display=display_name(name),
+                           columns=col_labels, num_fields=num_fields, rows=rows,
+                           sort_key=sort_key, order=order, sort_url=sort_url, error=None)
+
+
+@app.route("/crawler/<name>/trend")
+def snapshot_trend(name):
+    """快照实体的历史趋势折线图（单字段打样）。"""
+    db = get_db()
+    if name not in db.list_collection_names():
+        return render_template("trend.html", name=name, display=display_name(name),
+                               error="找不到此爬虫"), 404
+
+    coll = db[name]
+    entity = request.args.get("entity", "")
+    field = request.args.get("field", "")
+    if not entity or not field:
+        return render_template("trend.html", name=name, display=display_name(name),
+                               error="缺少 entity 或 field 参数")
+
+    key_field = SNAPSHOT_ENTITY_KEY.get(name, "title")
+    docs = list(coll.find({key_field: entity}, sort=[("crawltime", 1)]))
+
+    if not docs:
+        return render_template("trend.html", name=name, display=display_name(name),
+                               label=entity, field=field, error="该实体暂无历史数据")
+
+    label = _entity_label(name, docs[0])
+    field_label = SNAPSHOT_FIELD_LABELS.get(field, field)
+
+    tz = timezone(timedelta(hours=8))
+    labels, values, fmt_values = [], [], []
+    for d in docs:
+        ts = d.get("crawltime")
+        v = d.get(field)
+        if ts is None or v is None:
+            continue
+        labels.append(datetime.fromtimestamp(ts, tz=tz).strftime("%m-%d %H:%M"))
+        values.append(round(v, 4) if isinstance(v, float) else v)
+        fmt_values.append(_fmt_snapshot_value(field, v))
+
+    return render_template("trend.html", name=name, display=display_name(name),
+                           label=label, field=field, field_label=field_label,
+                           labels=labels, values=values, fmt_values=fmt_values,
+                           points=len(values))
+
+
 @app.route("/crawler/<name>")
 def crawler_detail(name):
     db = get_db()
@@ -214,6 +453,11 @@ def crawler_detail(name):
         return render_template("crawler.html", name=name, error="找不到此爬虫"), 404
 
     coll = db[name]
+
+    # 快照类数据（累积历史）：走排行榜视图
+    if name in _snapshot_crawlers():
+        return _snapshot_view(coll, name)
+
     today_ts = beijing_today_start_ts()
     filter_mode = request.args.get("filter", "today")
     q = request.args.get("q", "").strip()
@@ -591,7 +835,10 @@ def _dedup_label(ccfg: dict, is_configured: bool) -> str:
     """去重策略的人类可读标签。未配置返回空串，coins 显式 null → 不去重"""
     if not is_configured:
         return ""
-    dk = ccfg.get("dedup_key")
+    if "dedup_key" not in ccfg:
+        # 没配 dedup_key（如只配了 placement/update_fields），走代码默认 link，不显示标签
+        return ""
+    dk = ccfg["dedup_key"]
     if dk is None:
         return "无去重"
     if dk:
