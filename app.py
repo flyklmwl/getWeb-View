@@ -5,16 +5,39 @@ from urllib.parse import urlencode
 
 import yaml
 from flask import Flask, render_template, request
+from bson import ObjectId
 from pymongo import MongoClient
 
 app = Flask(__name__)
 
 # 详情页额外字段 → 显示标签映射
 EXTRA_LABELS = {
+    # 内容 / 互动
     "reply_count": "💬",
+    "replies": "💬",
     "author": "👤",
+    "view_count": "👁️",
     "desc": "📝",
     "summary": "📝",
+    "content": "📝",
+    "category": "🏷️",
+    "tags": "🏷️",
+    "channel": "📢",
+    "time": "🕐",
+    "date": "📅",
+    "name": "📛",
+    # 房产
+    "price": "💰",
+    "original_price": "💵",
+    "discount": "🏷️",
+    "area": "📐",
+    "community": "🏘️",
+    "district": "📍",
+    # ID
+    "appid": "🆔",
+    "item_id": "🆔",
+    "prop_id": "🆔",
+    "listing_id": "🆔",
 }
 
 # 爬虫标签映射：collection 名 → display 名 + 分类
@@ -72,11 +95,17 @@ RELOAD_PATH = os.environ.get("RELOAD_PATH", "/getweb-reload")
 
 
 DB_NAME = "webdata"
+ANALYSIS_DB_NAME = "analysis"
 
 
 def get_db():
     client = MongoClient(MONGO_URL)
     return client[DB_NAME]
+
+
+def get_analysis_db():
+    client = MongoClient(MONGO_URL)
+    return client[ANALYSIS_DB_NAME]
 
 
 def beijing_today_start_ts():
@@ -313,7 +342,21 @@ def crawler_detail(name):
     last = coll.find_one(sort=[("crawltime", -1)], projection={"crawltime": 1})
 
     latest_ts = last["crawltime"] if last else None
+
+    # 标记状态：查询 bookmarks 里已标记的 src_id
+    marked_ids = set()
+    try:
+        bm_coll = get_analysis_db()["bookmarks"]
+        src_ids = [str(item["_id"]) for item in items]
+        marked_ids = set(
+            b["src_id"] for b in bm_coll.find({"src_id": {"$in": src_ids}}, {"src_id": 1})
+        )
+    except Exception:
+        pass
+
     for item in items:
+        item["_id_str"] = str(item["_id"])
+        item["_marked"] = item["_id_str"] in marked_ids
         item["_time"] = ts_to_beijing(item.get("crawltime"))
         # 提取激活的额外字段为徽章
         extras = []
@@ -741,6 +784,91 @@ def api_today():
     sorted_result["_total"] = total
     sorted_result["_date"] = datetime.fromtimestamp(today_ts, tz=timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     return sorted_result
+
+
+@app.route("/api/bookmark", methods=["POST"])
+def api_bookmark():
+    """标记/取消标记一条数据。add 时从源 collection 拉完整快照存入 bookmarks。"""
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    source = data.get("source", "")
+    src_id = data.get("src_id", "")
+
+    if action not in ("add", "remove") or not source or not src_id:
+        return {"ok": False, "error": "参数错误"}, 400
+
+    bm_coll = get_analysis_db()["bookmarks"]
+
+    if action == "remove":
+        bm_coll.delete_one({"src_id": src_id})
+        return {"ok": True, "marked": False}
+
+    db = get_db()
+    if source not in db.list_collection_names():
+        return {"ok": False, "error": "来源不存在"}, 404
+
+    try:
+        oid = ObjectId(src_id)
+    except Exception:
+        return {"ok": False, "error": "非法 ID"}, 400
+
+    item = db[source].find_one({"_id": oid})
+    if not item:
+        return {"ok": False, "error": "条目不存在"}, 404
+
+    snapshot = {k: v for k, v in item.items() if k != "_id"}
+    snapshot["src_id"] = src_id
+    snapshot["source"] = source
+    snapshot["created_at"] = datetime.now(timezone.utc).timestamp()
+
+    bm_coll.update_one({"src_id": src_id}, {"$set": snapshot}, upsert=True)
+    return {"ok": True, "marked": True}
+
+
+@app.route("/analysis")
+def analysis():
+    """数据分析：集中展示所有已标记的数据。"""
+    bm_coll = get_analysis_db()["bookmarks"]
+    source_filter = request.args.get("source", "").strip()
+
+    query = {"source": source_filter} if source_filter else {}
+    bookmarks = list(bm_coll.find(query, sort=[("created_at", -1)]))
+
+    # 来源统计（筛选条）
+    sources = []
+    try:
+        pipeline = [
+            {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+        ]
+        for s in bm_coll.aggregate(pipeline):
+            s["display"] = display_name(s["_id"])
+            sources.append(s)
+    except Exception:
+        pass
+
+    skip_keys = ("_id", "src_id", "source", "created_at", "title", "link", "name", "crawltime")
+    for bm in bookmarks:
+        bm["_time"] = ts_to_beijing(bm.get("created_at"))
+        bm["_title"] = bm.get("title") or bm.get("name") or bm.get("link") or "(无标题)"
+        bm["_link"] = bm.get("link") or ""
+        bm["_source_display"] = display_name(bm.get("source", ""))
+        badges = []
+        for k, v in bm.items():
+            if k in skip_keys:
+                continue
+            if isinstance(v, str) and len(v) > 50:
+                v = v[:47] + "..."
+            badges.append((EXTRA_LABELS.get(k, k), v))
+        bm["_badges"] = badges
+
+    return render_template(
+        "analysis.html",
+        bookmarks=bookmarks,
+        sources=sources,
+        source_filter=source_filter,
+        total=len(bookmarks),
+    )
 
 
 if __name__ == "__main__":

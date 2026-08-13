@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}数据分析{% endblock %}
+{% block content %}
+
+<h4 class="mb-3">💾 数据分析</h4>
+
+{% if sources %}
+<div class="channel-bar">
+    <a href="/analysis" class="channel-pill {{ 'active' if not source_filter }}">全部 ({{ total }})</a>
+    {% for s in sources %}
+    <a href="/analysis?source={{ s._id }}" class="channel-pill {{ 'active' if source_filter == s._id }}">{{ s.display }} ({{ s.count }})</a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-card">
+    {% if bookmarks %}
+    {% for bm in bookmarks %}
+    <div class="item-row d-flex justify-content-between align-items-start">
+        <div class="d-flex align-items-start">
+            <button class="bm-btn marked" data-src="{{ bm.source }}" data-id="{{ bm.src_id }}" title="取消标记"><svg class="bm-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L14.9 8 L20.6 9.2 L16.8 13.5 L17.3 19.3 L12 17 L6.7 19.3 L7.2 13.5 L3.4 9.2 L9.1 8 Z"/></svg></button>
+            <div>
+                <div class="item-title">
+                    {% if bm._link %}
+                    <a href="{{ bm._link }}" target="_blank" rel="noopener">{{ bm._title }}</a>
+                    {% else %}
+                    {{ bm._title }}
+                    {% endif %}
+                </div>
+                <div class="item-extras">
+                    <span class="source-tag">{{ bm._source_display }}</span>
+                    {% for label, value in bm._badges %}
+                    <span class="extra-badge">{{ label }} {{ value }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="item-time text-nowrap ms-3">{{ bm._time }}</div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="text-muted text-center py-5">
+        <div style="font-size:42px;margin-bottom:10px">⭐</div>
+        <div>还没有标记任何数据</div>
+        <div style="font-size:12px;margin-top:6px">去<a href="/">爬虫详情页</a>，点条目左侧的 ☆ 标记对你有用的数据</div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.channel-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.channel-pill {
+    display: inline-block; font-size: 12px; padding: 4px 12px;
+    border-radius: 14px; color: #6c757d; background: #f0f0f0;
+    text-decoration: none; transition: .15s; border: 1px solid transparent;
+}
+.channel-pill:hover { color: #e94560; border-color: #e94560; }
+.channel-pill.active { color: #fff; background: #e94560; }
+.item-extras { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
+.extra-badge {
+    display: inline-block; background: #e8f4fd; color: #2471a3;
+    font-size: 11px; padding: 1px 7px; border-radius: 10px;
+}
+</style>
+
+{% endblock %}

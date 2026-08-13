@@ -70,6 +70,12 @@
         .search-inline input { font-size: 13px; padding: 5px 12px; border: 1px solid #dee2e6; border-radius: 6px; outline: none; flex: 1; }
         .search-inline input:focus { border-color: #e94560; }
         .sidebar-details summary::-webkit-details-marker { display: none; }
+        .bm-btn { background: none; border: none; cursor: pointer; padding: 0 6px 0 0; line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
+        .bm-btn .bm-star { width: 18px; height: 18px; color: #cbd2d9; transition: transform .15s, color .15s; }
+        .bm-btn .bm-star path { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+        .bm-btn:hover .bm-star { color: #f1c40f; transform: scale(1.15) rotate(-8deg); }
+        .bm-btn.marked .bm-star { color: #f1c40f; }
+        .bm-btn.marked .bm-star path { fill: currentColor; }
         @media (max-width: 768px) {
             .sidebar { position: fixed; z-index: 1000; height: 100vh; box-shadow: 4px 0 20px rgba(0,0,0,.3); }
             .sidebar.collapsed { display: none; }
@@ -102,6 +108,7 @@
             <a href="/stats/trend" class="crawler-link {{ 'active' if request.path == '/stats/trend' }}">每日趋势</a>
             <a href="/stats/today" class="crawler-link {{ 'active' if request.path == '/stats/today' }}">今日对比</a>
         </details>
+        <a href="/analysis" class="{{ 'active' if request.path == '/analysis' }}">💾 数据分析</a>
         <a href="/config" class="{{ 'active' if request.path == '/config' }}">⚙️ 爬虫配置</a>
         <a href="/logs" class="{{ 'active' if request.path == '/logs' }}">📋 日志</a>
     </aside>
@@ -137,6 +144,28 @@ function toggleSidebar() {
         document.getElementById('sidebar').classList.add('collapsed');
     }
 })();
+
+// 标记按钮（数据分析）— 事件委托，详情页和分析页通用
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.bm-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const marked = btn.classList.contains('marked');
+    const action = marked ? 'remove' : 'add';
+    try {
+        const resp = await fetch('/api/bookmark', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action, source: btn.dataset.src, src_id: btn.dataset.id})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            btn.classList.toggle('marked', data.marked);
+        }
+    } catch (err) {
+        console.error('标记失败', err);
+    }
+});
 </script>
 
 </body>
