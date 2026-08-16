@@ -674,6 +674,23 @@ def crawler_config():
                 prefix = "#" if old.startswith("#") else ""
                 cfg["schedules"][name] = prefix + new_cron
         
+        elif action == "set_placement":
+            name = request.form.get("name", "")
+            placement = request.form.get("placement", "local").strip()
+            crawlers_cfg = cfg.get("crawlers", {})
+            if placement == "local":
+                # 切回本地：移除 placement 字段（空条目整个删掉）
+                if name in crawlers_cfg:
+                    crawlers_cfg[name].pop("placement", None)
+                    if not crawlers_cfg[name]:
+                        del crawlers_cfg[name]
+            else:
+                # 切到 worker 节点
+                if name not in crawlers_cfg:
+                    crawlers_cfg[name] = {}
+                crawlers_cfg[name]["placement"] = placement
+            cfg["crawlers"] = crawlers_cfg
+        
         # 写回 config.yaml
         yaml_str = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
         # 只在 schedules: 段内给未加引号的 cron 值统一加单引号
@@ -731,6 +748,7 @@ def crawler_config():
                 "freq": _cron_frequency(clean_cron),
                 "dedup_key": _dedup_label(ccfg, is_configured),
                 "update_fields": ccfg.get("update_fields"),
+                "placement": ccfg.get("placement", "local"),
             })
             stats["total"] += 1
             if disabled:

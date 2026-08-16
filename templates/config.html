@@ -36,6 +36,7 @@
                 <th>爬虫</th>
                 <th>Cron</th>
                 <th>周期</th>
+                <th>位置</th>
                 <th style="width:40px"></th>
             </tr>
         </thead>
@@ -65,6 +66,13 @@
                            onkeydown="if(event.key==='Enter')saveCron('{{ s.name }}')">
                 </td>
                 <td class="config-human" id="human-{{ s.name }}">{{ s.human }}</td>
+                <td>
+                    {% if s.placement == 'local' %}
+                    <button class="placement-btn placement-local" onclick="togglePlacement('{{ s.name }}', 'local')" title="切到 worker">🏠 本地</button>
+                    {% else %}
+                    <button class="placement-btn placement-worker" onclick="togglePlacement('{{ s.name }}', '{{ s.placement }}')" title="切回本地">☁️ {{ s.placement }}</button>
+                    {% endif %}
+                </td>
                 <td>
                     <button class="save-btn" id="btn-{{ s.name }}"
                             onclick="saveCron('{{ s.name }}')"
@@ -110,6 +118,16 @@
 .disabled-row td { opacity: .45; }
 .disabled-row .config-human { color: #bdc3c7; }
 
+/* Placement 位置按钮 */
+.placement-btn {
+    border: none; border-radius: 12px; padding: 3px 10px;
+    font-size: 12px; cursor: pointer; transition: .15s; font-weight: 500;
+}
+.placement-local { background: #ecf0f1; color: #7f8c8d; }
+.placement-local:hover { background: #d5dbdb; }
+.placement-worker { background: #e8f4fd; color: #2980b9; border: 1px solid #2980b9; }
+.placement-worker:hover { background: #2980b9; color: #fff; }
+
 /* Cron input */
 .cron-input {
     font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 13px;
@@ -154,6 +172,18 @@ function postForm(data) {
     var form = new FormData();
     for (var k in data) form.append(k, data[k]);
     return fetch('/config', { method: 'POST', body: form }).then(function(r){ return r.json(); });
+}
+
+function togglePlacement(name, current) {
+    var target = (current === 'local') ? 'openclaw' : 'local';
+    postForm({ action: 'set_placement', name: name, placement: target }).then(function(res){
+        if (res.ok) {
+            toast('✅ ' + name + ' → ' + (target === 'local' ? '本地' : target));
+            setTimeout(function(){ location.reload(); }, 400);
+        } else {
+            toast('❌ 切换失败');
+        }
+    });
 }
 
 function toggleCrawler(name, cb) {
