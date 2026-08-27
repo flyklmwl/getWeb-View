@@ -48,6 +48,14 @@
         {% else %}全部记录（第 {{ page }}/{{ total_pages }} 页）
         {% endif %}
     </div>
+    {% if sortable_ts %}
+    <select class="sort-select" onchange="if(this.value) location.href=this.value;">
+        <option value="{{ qs(sort=None, page=None) }}" {{ 'selected' if not sort_field }}>按抓取时间</option>
+        {% for f, lab in sortable_ts %}
+        <option value="{{ qs(sort=f, page=None) }}" {{ 'selected' if sort_field == f }}>{{ lab }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
 </div>
 
 <form class="search-inline" action="/crawler/{{ name }}" method="get">
@@ -217,6 +225,11 @@
 }
 .channel-pill:hover { color: #e94560; border-color: #e94560; }
 .channel-pill.active { color: #fff; background: #e94560; }
+.sort-select {
+    font-size: 12px; padding: 4px 10px; border: 1px solid #dee2e6;
+    border-radius: 14px; background: #fff; color: #6c757d; outline: none; cursor: pointer;
+}
+.sort-select:hover, .sort-select:focus { border-color: #e94560; color: #e94560; }
 .new-badge {
     display: inline-block; background: #e74c3c; color: #fff;
     font-size: 10px; font-weight: 700; padding: 1px 5px;

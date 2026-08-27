@@ -445,6 +445,33 @@ def snapshot_trend(name):
                            points=len(values))
 
 
+def _mdd_hhmm_s(text: str) -> float:
+    """发布绝对时间 'MM-DD HH:MM' → 时间戳（当前年，冲突时自动回退上一年）。
+
+    闲鱼详情页按发布时间排序时用。缺 pub_time 或格式不符返回 0（排最后）。
+    """
+    s = (text or "").strip()
+    m = re.match(r"^(\d{2})-(\d{2}) (\d{2}):(\d{2})$", s)
+    if not m:
+        return 0.0
+    mo, da, hh, mi = map(int, m.groups())
+    now = datetime.now()
+    try:
+        ts = datetime(now.year, mo, da, hh, mi).timestamp()
+    except ValueError:
+        return 0.0
+    if ts > now.timestamp():  # 跨年：解析出未来时间说明是上一年（如 12-31 vs 01-01）
+        try:
+            ts = datetime(now.year - 1, mo, da, hh, mi).timestamp()
+        except ValueError:
+            return 0.0
+    return ts
+
+
+# 详情页可选的「按时间排序」字段（字段名, 选项标签）。字段存在于样本里才显示。
+_TS_SORT_OPTIONS = [("pub_time", "按发布时间")]
+
+
 @app.route("/crawler/<name>")
 def crawler_detail(name):
     db = get_db()
@@ -547,7 +574,18 @@ def crawler_detail(name):
         page = total_pages
 
     skip = (page - 1) * PER_PAGE
-    items = list(coll.find(query, sort=[("crawltime", -1), ("_id", -1)]).skip(skip).limit(PER_PAGE))
+
+    # 排序：sort 指定按某发布/时间字段排（当前支持 pub_time，Python 端解析成时间戳倒序）
+    # 非法/不存在的字段 → 回落默认抓取时间倒序
+    sort_field = request.args.get("sort", "").strip()
+    sortable_ts = [(f, lab) for f, lab in _TS_SORT_OPTIONS if f in field_types]
+    if sort_field in dict(sortable_ts):
+        all_items = list(coll.find(query, sort=[("crawltime", -1), ("_id", -1)]))
+        all_items.sort(key=lambda d: _mdd_hhmm_s(d.get(sort_field) or ""), reverse=True)
+        items = all_items[skip: skip + PER_PAGE]
+    else:
+        sort_field = ""
+        items = list(coll.find(query, sort=[("crawltime", -1), ("_id", -1)]).skip(skip).limit(PER_PAGE))
 
     # 当前所有查询参数（排除 page），打包成 query string 供模板复用
     base_params = {k: v for k, v in request.args.items() if k != "page"}
@@ -639,6 +677,8 @@ def crawler_detail(name):
         active_extras=active_extras,
         extra_filters=extra_filters,
         field_types=field_types,
+        sort_field=sort_field,
+        sortable_ts=sortable_ts,
         base_qs=base_qs,
         qs=qs,
         clear_extras_qs=clear_extras_qs,
