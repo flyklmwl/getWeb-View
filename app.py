@@ -469,23 +469,30 @@ def crawler_detail(name):
     if q:
         query["title"] = {"$regex": re.escape(q), "$options": "i"}
 
-    # Telegram 频道筛选
+    # 频道/关键字筛选（telegram 按 channel，闲鱼按 keyword，形态照搬 telegram 频道栏）
     channel_filter = request.args.get("channel", "").strip()
     channels = []
-    if name == "telegram_channel":
+    _chan_field = "channel" if name == "telegram_channel" else ("keyword" if name == "xianyu" else None)
+    if _chan_field:
         pipeline = [
             {"$match": {"crawltime": {"$gte": today_ts}} if filter_mode == "today" else {}},
-            {"$group": {"_id": "$channel", "count": {"$sum": 1}}},
+            {"$group": {"_id": f"${_chan_field}", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
         ]
         raw_channels = list(coll.aggregate(pipeline))
         labels = _load_labels()
         chan_labels = labels.get("channels", {})
+        channels = []
         for ch in raw_channels:
-            ch["display"] = chan_labels.get(ch["_id"], ch["_id"])
-        channels = raw_channels
+            if ch["_id"] is None:
+                continue  # 闲鱼首页 feed 项无 keyword，丢弃空集团
+            if _chan_field == "channel":
+                ch["display"] = chan_labels.get(ch["_id"], ch["_id"])
+            else:
+                ch["display"] = ch["_id"]  # 闲鱼 display = keyword 本身
+            channels.append(ch)
         if channel_filter:
-            query["channel"] = channel_filter
+            query[_chan_field] = channel_filter
 
     # 扫描此爬虫可用的额外字段（取一份样本即可，同一爬虫字段一致）
     available_extras = []
