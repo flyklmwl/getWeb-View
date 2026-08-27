@@ -446,23 +446,27 @@ def snapshot_trend(name):
 
 
 def _mdd_hhmm_s(text: str) -> float:
-    """发布绝对时间 'MM-DD HH:MM' → 时间戳（当前年，冲突时自动回退上一年）。
+    """发布绝对时间 'MM-DD HH:MM'（北京时间）→ 时间戳（北京时区解析，冲突回退上一年）。
 
-    闲鱼详情页按发布时间排序时用。缺 pub_time 或格式不符返回 0（排最后）。
+    ⚠️ 关键：pub_time 是爬虫在 Asia/Shanghai 容器按北京时间格式化的，而本容器是 UTC，
+    必须用北京时区解析并把「现在」也取北京时间，否则下午/晚上的 pub_time 会被误判为
+    「未来」→ 回退成去年 → 沉到排序最底（真实最新反而排在旧数据后面）。
+    缺 pub_time 或格式不符返回 0（排最后）。
     """
     s = (text or "").strip()
     m = re.match(r"^(\d{2})-(\d{2}) (\d{2}):(\d{2})$", s)
     if not m:
         return 0.0
     mo, da, hh, mi = map(int, m.groups())
-    now = datetime.now()
+    bj = timezone(timedelta(hours=8))
+    now_bj = datetime.now(bj)
     try:
-        ts = datetime(now.year, mo, da, hh, mi).timestamp()
+        ts = datetime(now_bj.year, mo, da, hh, mi, tzinfo=bj).timestamp()
     except ValueError:
         return 0.0
-    if ts > now.timestamp():  # 跨年：解析出未来时间说明是上一年（如 12-31 vs 01-01）
+    if ts > now_bj.timestamp():  # 跨年：解析出未来时间说明是上一年（如 12-31 vs 01-01）
         try:
-            ts = datetime(now.year - 1, mo, da, hh, mi).timestamp()
+            ts = datetime(now_bj.year - 1, mo, da, hh, mi, tzinfo=bj).timestamp()
         except ValueError:
             return 0.0
     return ts
