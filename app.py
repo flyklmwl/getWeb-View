@@ -503,7 +503,9 @@ def crawler_detail(name):
     # 频道/关键字筛选（telegram 按 channel，闲鱼按 keyword，形态照搬 telegram 频道栏）
     channel_filter = request.args.get("channel", "").strip()
     channels = []
-    _chan_field = "channel" if name == "telegram_channel" else ("keyword" if name == "xianyu" else None)
+    _chan_field = "channel" if name == "telegram_channel" else (
+        "keyword" if name == "xianyu" else "author" if name == "bilibili" else None
+    )
     if _chan_field:
         pipeline = [
             {"$match": {"crawltime": {"$gte": today_ts}} if filter_mode == "today" else {}},
