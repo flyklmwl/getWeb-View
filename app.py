@@ -8,6 +8,8 @@ from flask import Flask, render_template, request
 from bson import ObjectId
 from pymongo import MongoClient
 
+from logtail import tail_lines
+
 app = Flask(__name__)
 
 # 详情页额外字段 → 显示标签映射
@@ -749,6 +751,7 @@ def view_logs():
     """查看 getWeb 日志"""
     file = request.args.get("file", "getweb.log")
     lines = request.args.get("lines", 200, type=int)
+    lines = max(1, min(lines, 2000))          # 上限 2000 行：别让人用一个参数把内存拉爆
     level = request.args.get("level", "").upper()
     crawler = request.args.get("crawler", "").strip()
 
@@ -762,22 +765,10 @@ def view_logs():
 
     # 安全检查：防止路径穿越
     file_path = os.path.join(LOGS_PATH, os.path.basename(file))
-    log_lines = []
-    if os.path.isfile(file_path):
-        with open(file_path, errors="ignore") as f:
-            raw = f.readlines()
 
-        # 过滤
-        for line in raw:
-            if level and f"| {level:<8}" not in line:
-                continue
-            if crawler and f"[{crawler}]" not in line:
-                continue
-            log_lines.append(line.strip())
-
-        # 取最后 N 行，倒序（最新在前）
-        log_lines = log_lines[-lines:]
-        log_lines.reverse()
+    # ⚠️ 只从文件尾部按块读最后 lines 条（2026-11-07 OOM 事故：旧实现 f.readlines()
+    #    把整份日志读进内存，日志到 118MB 时单个请求吃 540MB RSS，直接拖死整机）
+    log_lines = tail_lines(file_path, lines, level, crawler)
 
     return render_template(
         "logs.html",
