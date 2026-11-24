@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
+import requests as _requests_lib
 import yaml
 from flask import Flask, render_template, request
 from bson import ObjectId
@@ -63,6 +64,47 @@ EXTRA_LABELS = {
 # 爬虫标签映射：collection 名 → display 名 + 分类
 LABELS_PATH = os.environ.get("LABELS_PATH", "/getweb-labels/labels.yaml")
 _labels_cache = None
+
+# RSSHub 实测用（与 getWeb 主仓 rsshub.py 同源：rss1.windcs.cn + query 参数 key）
+RSSHUB_BASE = os.environ.get("RSSHUB_BASE", "https://rss1.windcs.cn").rstrip("/")
+RSSHUB_KEY = os.environ.get("RSSHUB_KEY", "").strip()
+
+
+def _probe_rsshub_route(route: str, timeout: int = 20):
+    """提交前实测一条 RSSHub 路由：返回 (ok, 人话结论)。
+
+    照抄主仓 rsshub.py 的姿势：独立 Session + trust_env=False（容器里的
+    HTTP(S)_PROXY 是给境外站的，rss1 直连更快），key 用 query 参数。
+    """
+    params = {"limit": 2, "key": RSSHUB_KEY} if RSSHUB_KEY else {"limit": 2}
+    session = _requests_lib.Session()
+    session.trust_env = False
+    try:
+        resp = session.get(
+            f"{RSSHUB_BASE}{route}",
+            params=params,
+            timeout=timeout,
+            headers={"User-Agent": "getWeb-View/route-probe"},
+        )
+    except Exception as e:
+        return False, f"请求失败：{e.__class__.__name__}"
+    if resp.status_code != 200:
+        return False, f"RSSHub 返回 HTTP {resp.status_code}"
+    items = resp.text.count("<item") + resp.text.count("<entry")
+    if items == 0:
+        return False, "HTTP 200 但 0 条目（路由可能为空或已死）"
+    return True, f"HTTP 200 · {items} 条目"
+
+
+def _valid_cron(expr: str) -> bool:
+    """5 段 cron 粗校验：段数对 + 每段是合法字符集（*/-,,数字）。"""
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return False
+    for p in parts:
+        if not re.fullmatch(r"[\d*/,-]+", p):
+            return False
+    return True
 
 
 def _load_labels():
@@ -942,6 +984,7 @@ def crawler_config():
 
     if request.method == "POST":
         action = request.form.get("action", "")
+        global _labels_cache  # 分支多处清缓存，函数级声明一次
 
         # ── 标签编辑：写 labels.yaml，不碰 config.yaml / .reload（立即生效，无需热加载） ──
         if action in ("update_display", "update_category"):
@@ -976,7 +1019,6 @@ def crawler_config():
             with open(LABELS_PATH, "w") as f:   # 原地写：单文件 bind mount 不换 inode
                 f.write(out)
 
-            global _labels_cache
             _labels_cache = None  # 清进程缓存，仪表盘/侧边栏下次渲染即生效
             return {"ok": True}
 
@@ -1005,6 +1047,10 @@ def crawler_config():
         elif action == "set_placement":
             name = request.form.get("name", "")
             placement = request.form.get("placement", "local").strip()
+            # RSSHub 源固定本地执行：worker 只认识带 worker_config() 的爬虫，
+            # 切走 = 两边都不跑、静默断流，直接拒绝。
+            if name in (cfg.get("rsshub_routes") or {}):
+                return {"error": "RSSHub 源固定本地执行，不能切换位置"}, 400
             crawlers_cfg = cfg.get("crawlers", {})
             if placement == "local":
                 # 切回本地：移除 placement 字段（空条目整个删掉）
@@ -1019,6 +1065,113 @@ def crawler_config():
                 crawlers_cfg[name]["placement"] = placement
             cfg["crawlers"] = crawlers_cfg
         
+        elif action == "add_crawler":
+            name = (request.form.get("name") or "").strip()
+            route = (request.form.get("route") or "").strip()
+            cron = (request.form.get("cron") or "").strip()
+            display = (request.form.get("display") or "").strip()
+            category = (request.form.get("category") or "").strip()
+            limit = (request.form.get("limit") or "30").strip()
+
+            # ── 校验链：名称 → 路由 → cron，全过才碰磁盘 ──
+            if not re.fullmatch(r"[a-z0-9_]+", name):
+                return {"error": "名称只允许小写字母/数字/下划线"}, 400
+            if name in cfg.get("schedules", {}) or name in (cfg.get("rsshub_routes") or {}):
+                return {"error": f"名称已存在：{name}"}, 400
+            if not route.startswith("/"):
+                return {"error": "路由必须以 / 开头（如 /bendibao/news/cs）"}, 400
+            if not _valid_cron(cron):
+                return {"error": "cron 表达式非法（5 段：分 时 日 月 周）"}, 400
+            try:
+                limit_i = int(limit)
+                assert 1 <= limit_i <= 100
+            except Exception:
+                return {"error": "limit 需为 1~100 的整数"}, 400
+
+            # 路由实测：死路由当场拒绝，不进生产配置
+            ok, probe = _probe_rsshub_route(route)
+            if not ok:
+                return {"error": f"路由实测失败：{probe}"}, 400
+
+            # ── 落盘：备份 → 三段一次写 → round-trip 校验 → .reload ──
+            import shutil, time as _t
+            shutil.copy(CONFIG_PATH, CONFIG_PATH + ".bak-" + _t.strftime("%m%d%H%M"))
+            cfg.setdefault("rsshub_routes", {})[name] = {"route": route, "limit": limit_i}
+            cfg.setdefault("schedules", {})[name] = cron
+            yaml_out = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_load(yaml_out)  # round-trip 校验，失败不落盘
+            with open(CONFIG_PATH, "w") as f:
+                f.write(yaml_out)
+
+            if display or category:
+                if os.path.isfile(LABELS_PATH):
+                    with open(LABELS_PATH) as f:
+                        labels = yaml.safe_load(f) or {}
+                    labels.setdefault(name, {})
+                    if display:
+                        labels[name]["display"] = display
+                    if category:
+                        labels[name]["category"] = category
+                    labels_out = yaml.dump(labels, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    yaml.safe_load(labels_out)
+                    with open(LABELS_PATH, "w") as f:
+                        f.write(labels_out)
+                    _labels_cache = None
+
+            try:
+                with open(RELOAD_PATH, "w") as f:
+                    f.write("reload")
+            except Exception:
+                pass
+            return {"ok": True, "probe": probe,
+                    "hint": f"已写入并热加载，{name} 将在下一个「{cron}」周期首次抓取"}
+
+        elif action == "remove_crawler":
+            name = (request.form.get("name") or "").strip()
+            confirm = (request.form.get("confirm") or "").strip()
+            rsshub_names = set(cfg.get("rsshub_routes") or {})
+            is_rsshub = name in rsshub_names
+            # 代码型爬虫：删调度即永远不跑（注册表条目仅存于镜像，无运行影响）。
+            # 例外1: stats 是全局统计任务；例外2: 未知名字（不在 schedules 里）拒绝。
+            schedules = cfg.get("schedules", {})
+            if name == "stats":
+                return {"error": "stats 是全局统计任务，不可删除"}, 400
+            if name not in schedules:
+                return {"error": f"配置里没有这个源：{name}"}, 400
+            if confirm != name:
+                return {"error": "确认名不匹配：请手输完整源名称"}, 400
+
+            import shutil, time as _t
+            shutil.copy(CONFIG_PATH, CONFIG_PATH + ".bak-" + _t.strftime("%m%d%H%M"))
+            schedules.pop(name, None)
+            (cfg.get("rsshub_routes") or {}).pop(name, None)
+            cfg.get("crawlers", {}).pop(name, None)
+            yaml_out = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_load(yaml_out)
+            with open(CONFIG_PATH, "w") as f:
+                f.write(yaml_out)
+
+            if os.path.isfile(LABELS_PATH):
+                with open(LABELS_PATH) as f:
+                    labels = yaml.safe_load(f) or {}
+                if name in labels and isinstance(labels[name], dict):
+                    labels.pop(name)
+                    labels_out = yaml.dump(labels, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    yaml.safe_load(labels_out)
+                    with open(LABELS_PATH, "w") as f:
+                        f.write(labels_out)
+                    _labels_cache = None
+
+            try:
+                with open(RELOAD_PATH, "w") as f:
+                    f.write("reload")
+            except Exception:
+                pass
+            return {"ok": True,
+                    "hint": (f"{name} 调度已移除（热加载生效）；" +
+                             ("mongo 历史数据保留" if is_rsshub else
+                              "代码仍在镜像内，手工把调度加回 config.yaml 即可恢复"))}
+
         # 写回 config.yaml
         yaml_str = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
         # 只在 schedules: 段内给未加引号的 cron 值统一加单引号
@@ -1061,6 +1214,7 @@ def crawler_config():
             cfg = yaml.safe_load(f)
         
         crawlers_cfg = cfg.get("crawlers", {})
+        rsshub_names = set(cfg.get("rsshub_routes") or {})
         
         for name, cron_expr in cfg.get("schedules", {}).items():
             disabled = cron_expr.startswith("#")
@@ -1078,6 +1232,7 @@ def crawler_config():
                 "dedup_key": _dedup_label(ccfg, is_configured),
                 "update_fields": ccfg.get("update_fields"),
                 "placement": ccfg.get("placement", "local"),
+                "is_rsshub": name in rsshub_names,
             })
             stats["total"] += 1
             if disabled:
