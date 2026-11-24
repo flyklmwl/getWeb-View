@@ -15,7 +15,7 @@ services:
       - /opt/getweb/logs:/getweb-logs:ro
       - /opt/getweb/config.yaml:/getweb-config.yaml:rw
       - /opt/getweb/.reload:/getweb-reload
-      - /opt/getweb/labels.yaml:/getweb-labels/labels.yaml:ro
+      - /opt/getweb/labels.yaml:/getweb-labels/labels.yaml:rw
     networks:
       - web_net
 

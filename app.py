@@ -942,7 +942,44 @@ def crawler_config():
 
     if request.method == "POST":
         action = request.form.get("action", "")
-        
+
+        # ── 标签编辑：写 labels.yaml，不碰 config.yaml / .reload（立即生效，无需热加载） ──
+        if action in ("update_display", "update_category"):
+            if not os.path.isfile(LABELS_PATH):
+                return {"error": "labels.yaml 未找到"}, 500
+            name = request.form.get("name", "")
+            if not name or not re.fullmatch(r"[A-Za-z0-9_]+", name):
+                return {"error": "非法爬虫名"}, 400
+            value = (request.form.get("value") or "").strip()
+            if len(value) > 30:
+                return {"error": "内容过长（≤30 字符）"}, 400
+
+            with open(LABELS_PATH) as f:
+                raw = f.read()
+            labels = yaml.safe_load(raw) or {}
+            labels.setdefault(name, {})
+            if action == "update_display":
+                if value:
+                    labels[name]["display"] = value
+                else:
+                    labels[name].pop("display", None)   # 清空 = 回落原始名
+            else:
+                if value:
+                    labels[name]["category"] = value
+                else:
+                    labels[name].pop("category", None)  # 清空 = 回落「未分类」
+            if not labels[name]:
+                labels.pop(name)  # 两个键都空了就删掉整个条目
+
+            out = yaml.dump(labels, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_load(out)  # round-trip 校验：解析失败会抛异常，绝不落盘坏文件
+            with open(LABELS_PATH, "w") as f:   # 原地写：单文件 bind mount 不换 inode
+                f.write(out)
+
+            global _labels_cache
+            _labels_cache = None  # 清进程缓存，仪表盘/侧边栏下次渲染即生效
+            return {"ok": True}
+
         if not os.path.isfile(CONFIG_PATH):
             return {"error": "配置文件未找到"}, 500
         
@@ -1032,6 +1069,7 @@ def crawler_config():
             is_configured = name in crawlers_cfg
             schedules_list.append({
                 "name": name, "display": display_name(name),
+                "category": category_of(name),
                 "cron": clean_cron,
                 "cron_raw": cron_expr,
                 "human": _cron_to_human(clean_cron),
@@ -1050,7 +1088,9 @@ def crawler_config():
         error = f"配置文件未找到：{CONFIG_PATH}"
 
     schedules_list.sort(key=lambda s: s["freq"], reverse=True)
-    return render_template("config.html", schedules=schedules_list, stats=stats, error=error)
+    existing_categories = sorted({s["category"] for s in schedules_list if s["category"] != "未分类"})
+    return render_template("config.html", schedules=schedules_list, stats=stats,
+                           error=error, existing_categories=existing_categories)
 
 
 @app.route("/api/today")

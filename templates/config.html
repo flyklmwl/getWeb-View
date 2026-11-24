@@ -34,6 +34,7 @@
             <tr>
                 <th style="width:36px"></th>
                 <th>爬虫</th>
+                <th>分类</th>
                 <th>Cron</th>
                 <th>周期</th>
                 <th>位置</th>
@@ -51,7 +52,10 @@
                     </label>
                 </td>
                 <td class="config-name">
-                    {{ s.display }}
+                    <input class="display-input" id="display-{{ s.name }}"
+                           value="{{ s.display }}" title="{{ s.name }}"
+                           onkeydown="if(event.key==='Enter')saveLabel('{{ s.name }}','update_display',this)">
+                    <div class="config-rawname">{{ s.name }}</div>
                     {% if s.update_fields %}
                     <div class="config-tag tag-update">{{ s.update_fields|join(', ') }}</div>
                     {% elif s.dedup_key == '无去重' %}
@@ -59,6 +63,16 @@
                     {% elif s.dedup_key and s.dedup_key != 'link' %}
                     <div class="config-tag tag-dedup">{{ s.dedup_key }}</div>
                     {% endif %}
+                </td>
+                <td>
+                    <input class="cat-input" id="cat-{{ s.name }}" list="cat-options"
+                           value="{{ s.category }}" placeholder="未分类"
+                           onkeydown="if(event.key==='Enter')saveLabel('{{ s.name }}','update_category',this)">
+                    <datalist id="cat-options">
+                        {% for c in existing_categories %}
+                        <option value="{{ c }}"></option>
+                        {% endfor %}
+                    </datalist>
                 </td>
                 <td>
                     <input class="cron-input" id="cron-{{ s.name }}"
@@ -127,6 +141,23 @@
 .placement-local:hover { background: #d5dbdb; }
 .placement-worker { background: #e8f4fd; color: #2980b9; border: 1px solid #2980b9; }
 .placement-worker:hover { background: #2980b9; color: #fff; }
+
+/* Display / Category inputs */
+.display-input {
+    font-family: inherit; font-size: 14px; font-weight: 600; color: #2c3e50;
+    border: 1px solid transparent; border-radius: 4px; padding: 2px 6px;
+    width: 150px; outline: none; transition: .15s; background: transparent;
+}
+.display-input:hover { border-color: #dee2e6; }
+.display-input:focus { border-color: #e94560; background: #fff; }
+.config-rawname { font-size: 10px; color: #b2bec3; font-weight: 400; margin-top: 1px; }
+.cat-input {
+    font-size: 13px; color: #636e72;
+    border: 1px solid transparent; border-radius: 4px; padding: 3px 8px;
+    width: 100px; outline: none; transition: .15s; background: transparent;
+}
+.cat-input:hover { border-color: #dee2e6; }
+.cat-input:focus { border-color: #e94560; background: #fff; }
 
 /* Cron input */
 .cron-input {
@@ -238,6 +269,19 @@ function saveCron(name) {
             toast('✅ ' + name + ' → ' + newCron);
         } else {
             toast('❌ 保存失败');
+        }
+    });
+}
+
+function saveLabel(name, action, input) {
+    var value = input.value.trim();
+    input.classList.add('saving');
+    postForm({ action: action, name: name, value: value }).then(function(res){
+        input.classList.remove('saving');
+        if (res.ok) {
+            toast('✅ ' + (action === 'update_display' ? '显示名' : '分类') + '已保存');
+        } else {
+            toast('❌ ' + (res.error || '保存失败'));
         }
     });
 }
