@@ -48,6 +48,14 @@
             <label>Limit（1~100）
                 <input id="add-limit" value="30" type="number" min="1" max="100">
             </label>
+            <label>通知渠道
+                <select id="add-notify" class="notify-pill ch-empty" style="margin-top:4px">
+                    <option value="">未配置</option>
+                    {% for c, label in notify_options %}
+                    <option value="{{ c }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
             <button type="submit" class="btn-primary" id="add-btn">提交并实测路由</button>
@@ -71,6 +79,7 @@
                 <th>Cron</th>
                 <th>周期</th>
                 <th>位置</th>
+                <th>通知</th>
                 <th style="width:40px"></th>
             </tr>
         </thead>
@@ -120,6 +129,21 @@
                     <button class="placement-btn placement-local" onclick="togglePlacement('{{ s.name }}', 'local')" title="切到 worker">🏠 本地</button>
                     {% else %}
                     <button class="placement-btn placement-worker" onclick="togglePlacement('{{ s.name }}', '{{ s.placement }}')" title="切回本地">☁️ {{ s.placement }}</button>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if s.name == 'stats' %}
+                    <span class="notify-pill ch-ntfy" title="每日统计固定走 ntfy（STATS_NTFY_TOPIC）">ntfy·固定</span>
+                    {% else %}
+                    <select class="notify-pill ch-{{ s.notify if s.notify else 'empty' }}"
+                            data-orig="{{ s.notify }}"
+                            onchange="setNotify('{{ s.name }}', this)">
+                        <option value="" {{ 'selected' if not s.notify }}>未配置</option>
+                        {% for c, label in notify_options %}
+                        <option value="{{ c }}" {{ 'selected' if s.notify == c }}>{{ label }}</option>
+                        {% endfor %}
+                        <option value="none" {{ 'selected' if s.notify == 'none' }}>不发</option>
+                    </select>
                     {% endif %}
                 </td>
                 <td>
@@ -181,6 +205,23 @@
 .placement-local:hover { background: #d5dbdb; }
 .placement-worker { background: #e8f4fd; color: #2980b9; border: 1px solid #2980b9; }
 .placement-worker:hover { background: #2980b9; color: #fff; }
+
+/* 通知渠道胶囊（select 伪装成软药丸，点开才见选项） */
+.notify-pill {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    border: none; border-radius: 12px; padding: 3px 20px 3px 10px;
+    font-size: 12px; font-family: inherit; font-weight: 500;
+    cursor: pointer; transition: .15s; color: #7f8c8d; background-color: #ecf0f1;
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2395a5a6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+}
+.notify-pill:hover { filter: brightness(0.96); }
+.notify-pill.ch-empty { background-color: #ecf0f1; color: #95a5a6; }
+.notify-pill.ch-tg { background-color: #e8f4fd; color: #2980b9; }
+.notify-pill.ch-ntfy { background-color: #fef3e2; color: #e67e22; }
+.notify-pill.ch-gotify { background-color: #f3e8fd; color: #8e44ad; }
+.notify-pill.ch-wecom { background-color: #e8fdf0; color: #27ae60; }
+.notify-pill.ch-none { background-color: #fdecea; color: #c0392b; }
 
 /* Display / Category inputs */
 .display-input {
@@ -276,6 +317,26 @@ function postForm(data) {
     var form = new FormData();
     for (var k in data) form.append(k, data[k]);
     return fetch('/config', { method: 'POST', body: form }).then(function(r){ return r.json(); });
+}
+
+function setNotify(name, sel) {
+    var channel = sel.value;
+    sel.disabled = true;
+    postForm({ action: 'set_notify', name: name, channel: channel }).then(function(res){
+        sel.disabled = false;
+        if (res.ok) {
+            sel.className = 'notify-pill ch-' + (channel || 'empty');
+            sel.dataset.orig = channel;
+            toast('✅ ' + res.hint);
+        } else {
+            toast('❌ ' + (res.error || '保存失败'));
+            sel.value = sel.dataset.orig;
+        }
+    }).catch(function(){
+        sel.disabled = false;
+        toast('❌ 保存失败');
+        sel.value = sel.dataset.orig;
+    });
 }
 
 function togglePlacement(name, current) {
@@ -391,6 +452,7 @@ function addCrawler(ev) {
         display: document.getElementById('add-display').value.trim(),
         category: document.getElementById('add-category').value.trim(),
         limit: document.getElementById('add-limit').value.trim(),
+        notify: document.getElementById('add-notify').value,
     }).then(function(res){
         btn.disabled = false;
         btn.classList.remove('saving');

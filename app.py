@@ -155,6 +155,9 @@ LOGS_PATH = os.environ.get("LOGS_PATH", "/getweb-logs")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/getweb-config.yaml")
 RELOAD_PATH = os.environ.get("RELOAD_PATH", "/getweb-reload")
 
+# 通知渠道选项（与 getWeb notify.CHANNEL_BUILDERS 对应；加新渠道改这里 + getWeb 注册表）
+NOTIFY_CHANNEL_OPTIONS = [("tg", "TG"), ("ntfy", "ntfy"), ("gotify", "gotify"), ("wecom", "wecom")]
+
 
 DB_NAME = "webdata"
 ANALYSIS_DB_NAME = "analysis"
@@ -1065,6 +1068,38 @@ def crawler_config():
                 crawlers_cfg[name]["placement"] = placement
             cfg["crawlers"] = crawlers_cfg
         
+        elif action == "set_notify":
+            name = (request.form.get("name") or "").strip()
+            channel = (request.form.get("channel") or "").strip().lower()
+            if name not in cfg.get("schedules", {}):
+                return {"error": f"配置里没有这个源：{name}"}, 400
+            valid = {c for c, _ in NOTIFY_CHANNEL_OPTIONS} | {"none", ""}
+            if channel not in valid:
+                return {"error": f"未知渠道：{channel}"}, 400
+
+            import shutil, time as _t
+            shutil.copy(CONFIG_PATH, CONFIG_PATH + ".bak-" + _t.strftime("%m%d%H%M"))
+            notify_cfg = cfg.get("notify") or {}
+            if channel == "":
+                notify_cfg.pop(name, None)      # 清空 = 移除条目，回落 env 探测
+            else:
+                notify_cfg[name] = {"channel": channel}
+            if notify_cfg:
+                cfg["notify"] = notify_cfg
+            else:
+                cfg.pop("notify", None)
+            yaml_out = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_load(yaml_out)  # round-trip 校验，失败不落盘
+            with open(CONFIG_PATH, "w") as f:   # 原地写，不换 inode
+                f.write(yaml_out)
+            try:
+                with open(RELOAD_PATH, "w") as f:
+                    f.write("reload")
+            except Exception:
+                pass
+            label = dict(NOTIFY_CHANNEL_OPTIONS).get(channel, "静音" if channel == "none" else "未配置")
+            return {"ok": True, "hint": f"{name} 通知渠道 → {label}（下轮调度生效，无需重启）"}
+
         elif action == "add_crawler":
             name = (request.form.get("name") or "").strip()
             route = (request.form.get("route") or "").strip()
@@ -1072,6 +1107,8 @@ def crawler_config():
             display = (request.form.get("display") or "").strip()
             category = (request.form.get("category") or "").strip()
             limit = (request.form.get("limit") or "30").strip()
+            notify = (request.form.get("notify") or "").strip().lower()
+            _valid_channels = {c for c, _ in NOTIFY_CHANNEL_OPTIONS}
 
             # ── 校验链：名称 → 路由 → cron，全过才碰磁盘 ──
             if not re.fullmatch(r"[a-z0-9_]+", name):
@@ -1087,6 +1124,8 @@ def crawler_config():
                 assert 1 <= limit_i <= 100
             except Exception:
                 return {"error": "limit 需为 1~100 的整数"}, 400
+            if notify and notify not in _valid_channels:
+                return {"error": f"未知通知渠道：{notify}"}, 400
 
             # 路由实测：死路由当场拒绝，不进生产配置
             ok, probe = _probe_rsshub_route(route)
@@ -1098,6 +1137,8 @@ def crawler_config():
             shutil.copy(CONFIG_PATH, CONFIG_PATH + ".bak-" + _t.strftime("%m%d%H%M"))
             cfg.setdefault("rsshub_routes", {})[name] = {"route": route, "limit": limit_i}
             cfg.setdefault("schedules", {})[name] = cron
+            if notify:
+                cfg.setdefault("notify", {})[name] = {"channel": notify}
             yaml_out = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
             yaml.safe_load(yaml_out)  # round-trip 校验，失败不落盘
             with open(CONFIG_PATH, "w") as f:
@@ -1215,7 +1256,15 @@ def crawler_config():
         
         crawlers_cfg = cfg.get("crawlers", {})
         rsshub_names = set(cfg.get("rsshub_routes") or {})
-        
+        notify_cfg = cfg.get("notify") or {}
+
+        def _notify_channel(entry):
+            if isinstance(entry, dict):
+                return (entry.get("channel") or "").strip().lower()
+            if isinstance(entry, str):
+                return entry.strip().lower()
+            return ""
+
         for name, cron_expr in cfg.get("schedules", {}).items():
             disabled = cron_expr.startswith("#")
             clean_cron = cron_expr.lstrip("#")
@@ -1233,6 +1282,7 @@ def crawler_config():
                 "update_fields": ccfg.get("update_fields"),
                 "placement": ccfg.get("placement", "local"),
                 "is_rsshub": name in rsshub_names,
+                "notify": _notify_channel(notify_cfg.get(name)),
             })
             stats["total"] += 1
             if disabled:
@@ -1245,7 +1295,8 @@ def crawler_config():
     schedules_list.sort(key=lambda s: s["freq"], reverse=True)
     existing_categories = sorted({s["category"] for s in schedules_list if s["category"] != "未分类"})
     return render_template("config.html", schedules=schedules_list, stats=stats,
-                           error=error, existing_categories=existing_categories)
+                           error=error, existing_categories=existing_categories,
+                           notify_options=NOTIFY_CHANNEL_OPTIONS)
 
 
 @app.route("/api/today")
