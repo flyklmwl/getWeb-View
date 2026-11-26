@@ -96,6 +96,42 @@ def _probe_rsshub_route(route: str, timeout: int = 20):
     return True, f"HTTP 200 · {items} 条目"
 
 
+def _fetch_bilibili_up_info(mid: str, timeout: int = 20):
+    """探测一个 B站 UP：返回 (ok, 显示名, 人话结论)。
+
+    显示名取 RSS channel 标题去掉「 的 bilibili 空间」后缀，供提交前核对。
+    """
+    import xml.etree.ElementTree as ET
+
+    params = {"limit": 3, "key": RSSHUB_KEY} if RSSHUB_KEY else {"limit": 3}
+    session = _requests_lib.Session()
+    session.trust_env = False
+    try:
+        resp = session.get(
+            f"{RSSHUB_BASE}/bilibili/user/video/{mid}",
+            params=params,
+            timeout=timeout,
+            headers={"User-Agent": "getWeb-View/up-probe"},
+        )
+    except Exception as e:
+        return False, "", f"请求失败：{e.__class__.__name__}"
+    if resp.status_code != 200:
+        return False, "", f"RSSHub 返回 HTTP {resp.status_code}"
+    try:
+        root = ET.fromstring(resp.content)
+    except Exception:
+        return False, "", "返回内容不是合法 RSS"
+    items = len(list(root.iter("item")))
+    if items == 0:
+        return False, "", "HTTP 200 但 0 条目（mid 可能不存在）"
+    name = ""
+    ch = root.find("channel")
+    if ch is not None:
+        raw = ch.findtext("title") or ""
+        name = re.sub(r"\s*的\s*bilibili\s*空间\s*$", "", raw).strip()
+    return True, name, f"HTTP 200 · {items} 条目"
+
+
 def _valid_cron(expr: str) -> bool:
     """5 段 cron 粗校验：段数对 + 每段是合法字符集（*/-,,数字）。"""
     parts = expr.strip().split()
@@ -551,7 +587,9 @@ def crawler_detail(name):
     channel_filter = request.args.get("channel", "").strip()
     channels = []
     _chan_field = "channel" if name == "telegram_channel" else (
-        "keyword" if name == "xianyu" else "author" if name == "bilibili" else None
+        "keyword" if name == "xianyu" else
+        "up_name" if name == "bilibili_up" else
+        "author" if name == "bilibili" else None
     )
     if _chan_field:
         pipeline = [
@@ -1100,6 +1138,74 @@ def crawler_config():
             label = dict(NOTIFY_CHANNEL_OPTIONS).get(channel, "静音" if channel == "none" else "未配置")
             return {"ok": True, "hint": f"{name} 通知渠道 → {label}（下轮调度生效，无需重启）"}
 
+        elif action == "probe_bili_up":
+            mid = (request.form.get("mid") or "").strip()
+            if not re.fullmatch(r"\d{1,20}", mid):
+                return {"error": "mid 只能是数字（空间链接末尾那串数字）"}, 400
+            ok, detected, detail = False, "", ""
+            for _attempt in range(2):
+                ok, detected, detail = _fetch_bilibili_up_info(mid)
+                if ok:
+                    break
+            if not ok:
+                return {"error": f"探测失败：{detail}"}, 400
+            return {"ok": True, "name": detected, "detail": detail}
+
+        elif action in ("add_bili_up", "remove_bili_up"):
+            # B站 UP 表 → config.yaml 的 bilibili_uids（bilibili_up 爬虫每轮读表抓取）
+            import shutil, time as _t
+            ups = cfg.get("bilibili_uids") or []
+            if not isinstance(ups, list):
+                return {"error": "bilibili_uids 段格式不对（应为列表）"}, 500
+            norm = []
+            for it in ups:
+                if isinstance(it, dict) and it.get("mid"):
+                    norm.append({"mid": str(it["mid"]).strip(), "name": (it.get("name") or "").strip()})
+                elif isinstance(it, (str, int)):
+                    norm.append({"mid": str(it).strip(), "name": ""})
+
+            mid = (request.form.get("mid") or "").strip()
+            if action == "remove_bili_up":
+                if mid not in {u["mid"] for u in norm}:
+                    return {"error": f"表里没有这个 mid：{mid}"}, 400
+                norm = [u for u in norm if u["mid"] != mid]
+                hint = f"已移除 mid={mid}（热加载生效，mongo 历史数据保留）"
+            else:
+                display = (request.form.get("name") or "").strip()
+                if not re.fullmatch(r"\d{1,20}", mid):
+                    return {"error": "mid 只能是数字（空间链接 space.bilibili.com/<mid>）"}, 400
+                if len(display) > 30:
+                    return {"error": "显示名过长（≤30 字符）"}, 400
+                exists = next((u for u in norm if u["mid"] == mid), None)
+                if exists:
+                    exists["name"] = display
+                    hint = f"已更新 mid={mid} 显示名 → {display or '（用 mid）'}"
+                else:
+                    ok, detected, probe = False, "", ""
+                    for _attempt in range(2):   # B站路由偶发 503，重试一次
+                        ok, detected, probe = _fetch_bilibili_up_info(mid)
+                        if ok:
+                            break
+                    if not ok:
+                        return {"error": f"RSSHub 实测失败：{probe}"}, 400
+                    if not display:
+                        display = detected   # 留空就用探测到的显示名
+                    norm.append({"mid": mid, "name": display})
+                    hint = f"已加入 mid={mid} → {display or mid}（{probe}），下轮调度自动抓取"
+
+            shutil.copy(CONFIG_PATH, CONFIG_PATH + ".bak-" + _t.strftime("%m%d%H%M"))
+            cfg["bilibili_uids"] = norm
+            yaml_out = yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_load(yaml_out)
+            with open(CONFIG_PATH, "w") as f:
+                f.write(yaml_out)
+            try:
+                with open(RELOAD_PATH, "w") as f:
+                    f.write("reload")
+            except Exception:
+                pass
+            return {"ok": True, "hint": hint}
+
         elif action == "add_crawler":
             name = (request.form.get("name") or "").strip()
             route = (request.form.get("route") or "").strip()
@@ -1294,9 +1400,16 @@ def crawler_config():
 
     schedules_list.sort(key=lambda s: s["freq"], reverse=True)
     existing_categories = sorted({s["category"] for s in schedules_list if s["category"] != "未分类"})
+    bili_ups = []
+    for it in (cfg.get("bilibili_uids") or []) if not error else []:
+        if isinstance(it, dict) and it.get("mid"):
+            bili_ups.append({"mid": str(it["mid"]), "name": (it.get("name") or "")})
+        elif isinstance(it, (str, int)):
+            bili_ups.append({"mid": str(it), "name": ""})
+
     return render_template("config.html", schedules=schedules_list, stats=stats,
                            error=error, existing_categories=existing_categories,
-                           notify_options=NOTIFY_CHANNEL_OPTIONS)
+                           notify_options=NOTIFY_CHANNEL_OPTIONS, bili_ups=bili_ups)
 
 
 @app.route("/api/today")

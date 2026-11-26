@@ -64,6 +64,45 @@
     </form>
 </div>
 
+<div class="stat-card p-0 add-crawler-card">
+    <div class="add-crawler-head" onclick="toggleBiliForm()">
+        <span style="font-weight:600;color:#2c3e50">🎬 B站 UP 主投稿 <span style="font-weight:400;color:#95a5a6;font-size:12px">一个源 · 一张表</span></span>
+        <span style="font-size:11px;color:#95a5a6">增删即时热加载 · 抓取走后端 RSSHub，不碰 B 站风控</span>
+    </div>
+    <form id="bili-form" class="add-crawler-form" style="display:none" onsubmit="return addBiliUp(event)">
+        <div class="form-grid">
+            <label>UP 的 mid
+                <input id="bili-mid" placeholder="8878219" pattern="\d+" required onblur="probeBiliUp()">
+            </label>
+            <label>显示名（留空 = 用探测到的名字）
+                <input id="bili-name" placeholder="填入 mid 后自动探测">
+            </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+            <button type="submit" class="btn-primary" id="bili-btn">确认并加入</button>
+            <span id="bili-hint" style="font-size:12px;color:#95a5a6"></span>
+        </div>
+    </form>
+    <div style="padding:0 14px 14px">
+        {% if bili_ups %}
+        <div class="bili-list">
+            {% for u in bili_ups %}
+            <span class="bili-chip">
+                <span class="bili-name">{{ u.name or u.mid }}</span>
+                <span class="bili-mid">{{ u.mid }}</span>
+                <button type="button" class="act-btn" title="移出表" onclick="removeBiliUp('{{ u.mid }}')">✕</button>
+            </span>
+            {% endfor %}
+        </div>
+        <div style="font-size:11px;color:#95a5a6;margin-top:8px">
+            共 {{ bili_ups|length }} 个 UP · bilibili_up 每轮按表逐个抓取 · 同一 mid 再提交 = 改显示名
+        </div>
+        {% else %}
+        <div style="font-size:12px;color:#95a5a6;padding-top:10px">表为空，bilibili_up 本轮会跳过（不报错）</div>
+        {% endif %}
+    </div>
+</div>
+
 {% if error %}
 <div class="error-box">
     <p class="mb-0">{{ error }}</p>
@@ -284,6 +323,14 @@
 }
 .add-crawler-head:hover { background: #f8f9fa; }
 .add-crawler-form { padding: 4px 14px 14px; border-top: 1px dashed #eee; }
+.bili-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.bili-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 6px 5px 12px; border-radius: 999px; background: #f6f8fa;
+    font-size: 12px;
+}
+.bili-chip .bili-name { color: #2c3e50; font-weight: 600; }
+.bili-chip .bili-mid { color: #95a5a6; font-size: 11px; }
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 14px; }
 .form-grid label { font-size: 11px; color: #7f8c8d; display: flex; flex-direction: column; gap: 3px; }
 .form-grid input {
@@ -436,6 +483,61 @@ function saveRow(name) {
 function toggleAddForm() {
     var f = document.getElementById('add-form');
     f.style.display = (f.style.display === 'none') ? 'block' : 'none';
+}
+
+function toggleBiliForm() {
+    var f = document.getElementById('bili-form');
+    f.style.display = (f.style.display === 'none') ? 'block' : 'none';
+}
+
+function probeBiliUp() {
+    var midEl = document.getElementById('bili-mid');
+    var nameEl = document.getElementById('bili-name');
+    var hint = document.getElementById('bili-hint');
+    var mid = midEl.value.trim();
+    if (!/^\d{1,20}$/.test(mid)) { return; }
+    hint.textContent = '正在探测 UP 信息…';
+    postForm({action: 'probe_bili_up', mid: mid}).then(function(res){
+        if (res.ok) {
+            if (!nameEl.value.trim()) { nameEl.value = res.name || ''; }
+            hint.textContent = '探测到：' + (res.name || mid) + ' · ' + res.detail + '，核对无误后点「确认并加入」';
+        } else {
+            hint.textContent = '';
+            toast('❌ ' + (res.error || '探测失败'));
+        }
+    });
+}
+
+function addBiliUp(ev) {
+    ev.preventDefault();
+    var btn = document.getElementById('bili-btn');
+    var hint = document.getElementById('bili-hint');
+    btn.disabled = true;
+    hint.textContent = '提交中（首次会实测路由，最长 20s）…';
+    postForm({
+        action: 'add_bili_up',
+        mid: document.getElementById('bili-mid').value.trim(),
+        name: document.getElementById('bili-name').value.trim(),
+    }).then(function(res){
+        btn.disabled = false;
+        if (res.ok) {
+            toast('✅ UP 表已更新');
+            hint.textContent = res.hint;
+            setTimeout(function(){ location.reload(); }, 1000);
+        } else {
+            hint.textContent = '';
+            toast('❌ ' + (res.error || '保存失败'));
+        }
+    });
+    return false;
+}
+
+function removeBiliUp(mid) {
+    if (!confirm('从表里移除 mid=' + mid + '？mongo 历史数据保留')) return;
+    postForm({action: 'remove_bili_up', mid: mid}).then(function(res){
+        if (res.ok) { toast('✅ 已移除'); setTimeout(function(){ location.reload(); }, 700); }
+        else { toast('❌ ' + (res.error || '移除失败')); }
+    });
 }
 
 function addCrawler(ev) {
