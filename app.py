@@ -156,7 +156,7 @@ CONFIG_PATH = os.environ.get("CONFIG_PATH", "/getweb-config.yaml")
 RELOAD_PATH = os.environ.get("RELOAD_PATH", "/getweb-reload")
 
 # 通知渠道选项（与 getWeb notify.CHANNEL_BUILDERS 对应；加新渠道改这里 + getWeb 注册表）
-NOTIFY_CHANNEL_OPTIONS = [("tg", "TG"), ("ntfy", "ntfy"), ("gotify", "gotify"), ("wecom", "wecom")]
+NOTIFY_CHANNEL_OPTIONS = [("tg", "TG"), ("ntfy", "ntfy"), ("gotify", "gotify"), ("wecom", "企微应用"), ("wecom_bot", "企微群")]
 
 
 DB_NAME = "webdata"
